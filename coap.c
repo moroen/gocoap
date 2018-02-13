@@ -6,6 +6,7 @@ PyObject * sum(PyObject *, PyObject *);
 // PyObject * coapRequest(PyObject *, PyObject *);
 int coapSetGateway(char*, char*, char*);
 char * coapRequest(char *);
+char * coapPutRequest(char *, char *);
 
 // Workaround missing variadic function support
 // https://github.com/golang/go/issues/975
@@ -26,21 +27,6 @@ const char * ParseStringArgument(PyObject * args) {
     return s;
 }
 
-/*
-static PyObject * test(PyObject *self, PyObject *args)  
-{
-    const long long a, b;
-    const char* s;
-
-    if (!PyArg_ParseTuple(args, "s", &s))
-        return NULL;
-
-    printf("%s", s);
-
-    Py_RETURN_NONE; 
-}
-*/
-
 PyObject * setGateway(PyObject *self, PyObject *args) {
     char *ip, *ident, *psk;
 
@@ -60,8 +46,22 @@ PyObject * request(PyObject *self, PyObject *args) {
     res = coapRequest(uri);
     if (!res)
         Py_RETURN_NONE;
-        
+
     return PyUnicode_FromString(res);
+}
+
+PyObject * putRequest(PyObject *self, PyObject *args) {
+    char *uri, *payload, *res;
+
+    if (!PyArg_ParseTuple(args, "ss", &uri, &payload))
+        Py_RETURN_NONE;
+
+    res = coapPutRequest(uri, payload);
+    if (!res)
+        Py_RETURN_NONE;
+
+    return PyUnicode_FromString(res);
+    
 }
 
 static PyMethodDef CoapMethods[] = {  
@@ -69,6 +69,7 @@ static PyMethodDef CoapMethods[] = {
     {"sum", sum, METH_VARARGS, "Add two numbers."},
     {"SetGateway", setGateway, METH_VARARGS, "Set gateway info"},
     {"Request", request, METH_VARARGS, "Make a COAP Request."},
+    {"PutRequest", putRequest, METH_VARARGS, "Make a COAP Put Request."},
     {NULL, NULL, 0, NULL}
 };
 

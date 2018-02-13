@@ -60,4 +60,18 @@ func coapRequest(uri *C.char) *C.char {
 	return C.CString(msg.String())
 }
 
+//export coapPutRequest
+func coapPutRequest(uri, payload *C.char) *C.char {
+	sURI := C.GoString(uri)
+	sPayLoad := C.GoString(payload)
+
+	msg, err := coap.PutRequest(sURI, sPayLoad)
+	if err != nil {
+		fmt.Println(err.Error())
+		return nil
+	}
+
+	return C.CString(msg.String())
+}
+
 func main() {}
