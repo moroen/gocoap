@@ -3,8 +3,9 @@
 #include <stdio.h>
 
 PyObject * sum(PyObject *, PyObject *);
-PyObject * coapRequest(PyObject *, PyObject *);
+// PyObject * coapRequest(PyObject *, PyObject *);
 int coapSetGateway(char*, char*, char*);
+char * coapRequest(char *);
 
 // Workaround missing variadic function support
 // https://github.com/golang/go/issues/975
@@ -50,11 +51,24 @@ PyObject * setGateway(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
+PyObject * request(PyObject *self, PyObject *args) {
+    char *uri, *res;
+
+    if (!PyArg_ParseTuple(args, "s", &uri))
+        Py_RETURN_NONE;
+    
+    res = coapRequest(uri);
+    if (!res)
+        Py_RETURN_NONE;
+        
+    return PyUnicode_FromString(res);
+}
+
 static PyMethodDef CoapMethods[] = {  
     // {"test", test, METH_VARARGS, "Add two numbers."},
     {"sum", sum, METH_VARARGS, "Add two numbers."},
-    {"setGateway", setGateway, METH_VARARGS, "Set gateway info"},
-    {"coapRequest", coapRequest, METH_VARARGS, "Make a COAP Request."},
+    {"SetGateway", setGateway, METH_VARARGS, "Set gateway info"},
+    {"Request", request, METH_VARARGS, "Make a COAP Request."},
     {NULL, NULL, 0, NULL}
 };
 

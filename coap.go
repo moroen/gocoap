@@ -46,17 +46,18 @@ func coapSetGateway(ip, ident, key *C.char) C.int {
 }
 
 //export coapRequest
-func coapRequest(self, args *C.PyObject) *C.PyObject {
+func coapRequest(uri *C.char) *C.char {
 
-	s := C.ParseStringArgument(args)
+	s := C.GoString(uri)
 	// fmt.Println(C.GoString(s))
 
-	msg, err := coap.GetRequest(C.GoString(s))
+	msg, err := coap.GetRequest(s)
 	if err != nil {
 		fmt.Println(err.Error())
-		return C.PyLong_FromLongLong(0)
+		return nil
 	}
-	return C.PyUnicode_FromString(C.CString(msg.String()))
+	// return C.PyUnicode_FromString(C.CString(msg.String()))
+	return C.CString(msg.String())
 }
 
 func main() {}
