@@ -1,22 +1,22 @@
-lib = sum.so
-test = test
-
+export GOPATH=$(shell pwd)
+dep = ${GOPATH}/bin/dep
 python-libs = `pkg-config --cflags --libs python3`
+srcdir = src/pycoap
+src = $(srcdir)/coap.c $(srcdir)/coap.go
+vendor = src/pycoap/vendor
+target = ${GOPATH}/pycoap.so
 
-coap.so: coap.c coap.go
+$(target): $(dep) $(src) $(vendor)
 	#gcc -Wall -fPIC -shared -o coap.so $(python-libs)  coap.c
-	go build -v -buildmode=c-shared -o coap.so
+	cd $(srcdir); go build -v -buildmode=c-shared -o $(target)
 
-$(lib): *.go  
-	go build -buildmode=c-shared -o $(lib) sum.go
+$(dep):
+	go get -u github.com/golang/dep/cmd/dep
 
-test: coap.c
-	gcc -Wall -fPIC -shared -o coap.so $(python-libs)  coap.c
-
-main: *.c $(lib)
-	gcc -Wall -o main main.c ./$(lib)
+$(vendor):
+	dep ensure
 
 clean:
-	rm -rf *.so
-	rm -rf *.h
+	rm -rf $(srcdir)/*.so
+	rm -rf $(srcdir)/*.h
 	
