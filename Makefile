@@ -14,7 +14,7 @@ $(dep):
 	go get -u github.com/golang/dep/cmd/dep
 
 $(vendor):
-	dep ensure
+	cd $(srcdir); dep ensure
 
 clean:
 	rm -rf $(srcdir)/*.so
