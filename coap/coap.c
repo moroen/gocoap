@@ -65,8 +65,6 @@ PyObject * putRequest(PyObject *self, PyObject *args) {
 }
 
 static PyMethodDef CoapMethods[] = {  
-    // {"test", test, METH_VARARGS, "Add two numbers."},
-    {"sum", sum, METH_VARARGS, "Add two numbers."},
     {"SetGateway", setGateway, METH_VARARGS, "Set gateway info"},
     {"Request", request, METH_VARARGS, "Make a COAP Request."},
     {"PutRequest", putRequest, METH_VARARGS, "Make a COAP Put Request."},
