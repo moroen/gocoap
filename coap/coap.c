@@ -27,6 +27,7 @@ const char * ParseStringArgument(PyObject * args) {
     return s;
 }
 
+
 PyObject * setGateway(PyObject *self, PyObject *args) {
     char *ip, *ident, *psk;
 
@@ -64,7 +65,7 @@ PyObject * putRequest(PyObject *self, PyObject *args) {
     
 }
 
-static PyMethodDef CoapMethods[] = {  
+static PyMethodDef CoapMethods[] = {
     {"SetGateway", setGateway, METH_VARARGS, "Set gateway info"},
     {"Request", request, METH_VARARGS, "Make a COAP Request."},
     {"PutRequest", putRequest, METH_VARARGS, "Make a COAP Put Request."},
