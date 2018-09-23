@@ -145,11 +145,62 @@ func PutRequest(URI, payload string) (msg canopus.MessagePayload, err error) {
 	go _putRequest(URI, payload, c)
 
 	select {
-	case res := <-c:
-		return res.msg, res.err
+	case _ = <-c:
+		return GetRequest(URI)
 	case <-time.After(time.Second * 5):
 		return nil, ErrorTimeout
 	}
 }
 
+/* func Observe(URI string) {
+
+	conf, err := GetConfig()
+	if err != nil {
+		result.err = ErrorNoConfig
+		c <- result
+		return
+	}
+
+	conn, err := canopus.DialDTLS(conf.Gateway, conf.Identity, conf.Passkey)
+
+	tok, err := conn.ObserveResource("/15001/65540")
+	if err != nil {
+		panic(err.Error())
+	}
+
+	obsChannel := make(chan canopus.ObserveMessage)
+	done := make(chan bool)
+	go conn.Observe(obsChannel)
+
+	notifyCount := 0
+	go func() {
+		for {
+			select {
+			case obsMsg, open := <-obsChannel:
+				if open {
+					if notifyCount == 5 {
+						fmt.Println("[CLIENT >> ] Canceling observe after 5 notifications..")
+						go conn.CancelObserveResource("watch/this", tok)
+						go conn.StopObserve(obsChannel)
+						done <- true
+						return
+					} else {
+						notifyCount++
+						// msg := obsMsg.Msg\
+						resource := obsMsg.GetResource()
+						val := obsMsg.GetValue()
+
+						fmt.Println("[CLIENT >> ] Got Change Notification for resource and value: ", notifyCount, resource, val)
+					}
+				} else {
+					done <- true
+					return
+				}
+			}
+		}
+	}()
+	<-done
+	fmt.Println("Done")
+}
+*/
 func main() {}
