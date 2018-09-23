@@ -17,7 +17,7 @@ On debian-based distros:
 ### golang-compiler
 
 ```shell
-  $ sudo apt install libssl-dev
+  $ sudo apt install golang
 ```
 
 ## Installation
