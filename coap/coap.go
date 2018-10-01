@@ -15,12 +15,12 @@ import (
 	"github.com/moroen/canopus"
 )
 
-var globalGatewayConfig GatewayConfig
-
-type GatewayConfig struct {
+type CoapRequest struct {
 	Gateway  string
+	Uri      string
 	Identity string
 	Passkey  string
+	Payload  string
 }
 
 type CoapResult struct {
@@ -32,32 +32,16 @@ var ErrorTimeout = errors.New("COAP Error: Connection timeout")
 var ErrorBadIdent = errors.New("COAP DTLS Error: Wrong credentials?")
 var ErrorNoConfig = errors.New("COAP Error: No config")
 
-func GetConfig() (conf GatewayConfig, err error) {
-	if globalGatewayConfig == (GatewayConfig{}) {
-		err = ErrorNoConfig
-	}
-	return globalGatewayConfig, err
-}
-
-func _getRequest(URI string, c chan CoapResult) {
+func _getRequest(request CoapRequest, c chan CoapResult) {
 
 	var result CoapResult
 	var conn canopus.Connection
 	var err error
 
-	conf, err := GetConfig()
-	if err != nil {
-		result.err = ErrorNoConfig
-		c <- result
-		return
-	}
-
-	if conf.Identity != "" {
-		conn, err = canopus.DialDTLS(conf.Gateway, conf.Identity, conf.Passkey)
-
+	if request.Identity != "" {
+		conn, err = canopus.DialDTLS(request.Gateway, request.Identity, request.Passkey)
 	} else {
-		conn, err = canopus.Dial(conf.Gateway)
-
+		conn, err = canopus.Dial(request.Gateway)
 	}
 
 	if err != nil {
@@ -68,7 +52,7 @@ func _getRequest(URI string, c chan CoapResult) {
 
 	req := canopus.NewRequest(canopus.MessageConfirmable, canopus.Get)
 	req.SetStringPayload("Hello, canopus")
-	req.SetRequestURI(URI)
+	req.SetRequestURI(request.Uri)
 
 	resp, err := conn.Send(req)
 	if err != nil {
@@ -83,24 +67,16 @@ func _getRequest(URI string, c chan CoapResult) {
 	c <- result
 }
 
-func _putRequest(URI, payload string, c chan CoapResult) {
+func _putRequest(request CoapRequest, c chan CoapResult) {
 	var result CoapResult
 
 	var conn canopus.Connection
 	var err error
 
-	conf, err := GetConfig()
-	if err != nil {
-		result.err = ErrorNoConfig
-		c <- result
-		return
-	}
-
-	if conf.Identity != "" {
-		conn, err = canopus.DialDTLS(conf.Gateway, conf.Identity, conf.Passkey)
-
+	if request.Identity != "" {
+		conn, err = canopus.DialDTLS(request.Gateway, request.Identity, request.Passkey)
 	} else {
-		conn, err = canopus.Dial(conf.Gateway)
+		conn, err = canopus.Dial(request.Gateway)
 
 	}
 
@@ -111,8 +87,8 @@ func _putRequest(URI, payload string, c chan CoapResult) {
 	}
 
 	req := canopus.NewRequest(canopus.MessageConfirmable, canopus.Put)
-	req.SetRequestURI(URI)
-	req.SetStringPayload(payload)
+	req.SetRequestURI(request.Uri)
+	req.SetStringPayload(request.Payload)
 
 	resp, err := conn.Send(req)
 	if err != nil {
@@ -126,10 +102,13 @@ func _putRequest(URI, payload string, c chan CoapResult) {
 	c <- result
 }
 
-func GetRequest(URI string) (msg canopus.MessagePayload, err error) {
+// Export GetRequestDTLS
+func GetRequestDTLS(gateway, uri, ident, key string) (msg canopus.MessagePayload, err error) {
 	c := make(chan CoapResult)
 
-	go _getRequest(URI, c)
+	req := CoapRequest{Gateway: gateway, Uri: uri, Identity: ident, Passkey: key, Payload: ""}
+
+	go _getRequest(req, c)
 
 	select {
 	case res := <-c:
@@ -139,17 +118,28 @@ func GetRequest(URI string) (msg canopus.MessagePayload, err error) {
 	}
 }
 
-func PutRequest(URI, payload string) (msg canopus.MessagePayload, err error) {
+// Export GetRequest
+func GetRequest(gateway, uri string) (msg canopus.MessagePayload, err error) {
+	return GetRequestDTLS(gateway, uri, "", "")
+}
+
+func PutRequestDTLS(gateway, uri, ident, key, payload string) (msg canopus.MessagePayload, err error) {
 	c := make(chan CoapResult)
 
-	go _putRequest(URI, payload, c)
+	req := CoapRequest{Gateway: gateway, Uri: uri, Identity: ident, Passkey: key, Payload: payload}
+
+	go _putRequest(req, c)
 
 	select {
 	case _ = <-c:
-		return GetRequest(URI)
+		return GetRequestDTLS(gateway, uri, ident, key)
 	case <-time.After(time.Second * 5):
 		return nil, ErrorTimeout
 	}
+}
+
+func PutRequest(gateway, uri, payload string) (msg canopus.MessagePayload, err error) {
+	return PutRequestDTLS(gateway, uri, "", "", payload)
 }
 
 /* func Observe(URI string) {

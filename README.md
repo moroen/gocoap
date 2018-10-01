@@ -29,4 +29,4 @@ On debian-based distros:
 ```
 
 ## Usage
-See included test.py for a small example
+See included pyclient.py for a small example

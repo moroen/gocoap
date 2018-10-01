@@ -11,25 +11,23 @@ import "fmt"
 
 // Python Functions
 
-//export coapSetGateway
-func coapSetGateway(ip, ident, key *C.char) C.int {
-	conf := GatewayConfig{
-		Gateway:  C.GoString(ip),
-		Identity: C.GoString(ident),
-		Passkey:  C.GoString(key),
-	}
+//export coapRequest
+func coapRequest(gateway, uri *C.char) *C.char {
 
-	globalGatewayConfig = conf
-	return 1
+	msg, err := GetRequest(C.GoString(gateway), C.GoString(uri))
+	if err != nil {
+		fmt.Println(err.Error())
+		return nil
+	}
+	// return C.PyUnicode_FromString(C.CString(msg.String()))
+	return C.CString(msg.String())
 }
 
-//export coapRequest
-func coapRequest(uri *C.char) *C.char {
+//export coapRequestDTLS
+func coapRequestDTLS(gateway, uri, ident, key *C.char) *C.char {
 
-	s := C.GoString(uri)
-	// fmt.Println(C.GoString(s))
+	msg, err := GetRequestDTLS(C.GoString(gateway), C.GoString(uri), C.GoString(ident), C.GoString(key))
 
-	msg, err := GetRequest(s)
 	if err != nil {
 		fmt.Println(err.Error())
 		return nil
@@ -39,11 +37,19 @@ func coapRequest(uri *C.char) *C.char {
 }
 
 //export coapPutRequest
-func coapPutRequest(uri, payload *C.char) *C.char {
-	sURI := C.GoString(uri)
-	sPayLoad := C.GoString(payload)
+func coapPutRequest(gateway, uri, payload *C.char) *C.char {
+	msg, err := PutRequest(C.GoString(gateway), C.GoString(uri), C.GoString(payload))
+	if err != nil {
+		fmt.Println(err.Error())
+		return nil
+	}
 
-	msg, err := PutRequest(sURI, sPayLoad)
+	return C.CString(msg.String())
+}
+
+//export coapPutRequestDTLS
+func coapPutRequestDTLS(gateway, uri, ident, key, payload *C.char) *C.char {
+	msg, err := PutRequestDTLS(C.GoString(gateway), C.GoString(uri), C.GoString(ident), C.GoString(key), C.GoString(payload))
 	if err != nil {
 		fmt.Println(err.Error())
 		return nil
