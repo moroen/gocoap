@@ -15,24 +15,13 @@ class MalformedURI(Exception):
 class MissingCredentials(Exception):
     pass
 
-def getCoreDTLS():
-    # With DTLS    
-    result =pycoap.DTLSRequest("192.168.1.15:5684", "/.well-known/core", "44d68a62-e6d5-4743-a4fb-ba1317c0e7a5", "eQrKSrpoWgdOPIbw")
-    print(result)
-
-def getCore():
-    # Without DTLS    
-    result = pycoap.Request("localhost:5683", "/.well-known/core")
-    print(result)
-
-def sendPayload():
-    print(pycoap.DTLSPutRequest("192.168.1.15:5684", "15001/65540", "44d68a62-e6d5-4743-a4fb-ba1317c0e7a5", "eQrKSrpoWgdOPIbw", "{ \"3311\": [{ \"5850\": 1 }] }"))
-
 if __name__ == '__main__':
     result = None
     args = parser.parse_args()
 
     uri = args.uri.split("/")
+
+    print(args.payload)
 
     try:
         if not (uri[0] == "coap:" or uri[0] == "coaps:"):
@@ -45,13 +34,18 @@ if __name__ == '__main__':
         dest = "/".join(uri[3:])
         
         if uri[0]=="coap:":
-            result = pycoap.Request(uri[2], dest)
+            if args.payload != None:
+                result = pycoap.PutRequest(uri[2], dest, args.payload)
+            else:
+                result = pycoap.Request(uri[2], dest)
 
         if uri[0]=="coaps:":
             if args.ident==None or args.key==None:
                 raise MissingCredentials
-            
-            result = pycoap.DTLSRequest(uri[2], dest, args.ident, args.key)
+            if args.payload != None:
+                result = pycoap.DTLSPutRequest(uri[2], dest, args.payload, args.ident, args.key)
+            else:
+                result = pycoap.DTLSRequest(uri[2], dest, args.ident, args.key)
 
         print(result)
     
