@@ -11,13 +11,13 @@ import (
 )
 
 type RequestParams struct {
-	host    string
-	port    int
-	uri     string
-	id      string
-	key     string
-	req     coap.Message
-	payload string
+	Host    string
+	Port    int
+	Uri     string
+	Id      string
+	Key     string
+	Req     coap.Message
+	Payload string
 }
 
 // ErrorTimeout error
@@ -67,13 +67,13 @@ func _getRequest(URI string, c chan CoapResult) {
 */
 
 func _request(params RequestParams) (retmsg coap.Message, err error) {
-	return params.req, nil
+	return params.Req, nil
 }
 
 func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 	mks := dtls.NewKeystoreInMemory()
 	dtls.SetKeyStores([]dtls.Keystore{mks})
-	mks.AddKey(params.id, []byte(params.key))
+	mks.AddKey(params.Id, []byte(params.Key))
 
 	listner, err := dtls.NewUdpListener(":0", time.Second*900)
 	if err != nil {
@@ -81,8 +81,8 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 	}
 
 	peerParams := &dtls.PeerParams{
-		Addr:             fmt.Sprintf("%s:%d", params.host, params.port),
-		Identity:         params.id,
+		Addr:             fmt.Sprintf("%s:%d", params.Host, params.Port),
+		Identity:         params.Id,
 		HandshakeTimeout: time.Second * 15}
 
 	peer, err := listner.AddPeerWithParams(peerParams)
@@ -92,7 +92,7 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 
 	peer.UseQueue(true)
 
-	data, err := params.req.MarshalBinary()
+	data, err := params.Req.MarshalBinary()
 	if err != nil {
 		panic(err.Error())
 	}
@@ -121,18 +121,18 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 }
 
 func _getRequest(params RequestParams, c chan coap.Message) {
-	params.req = coap.Message{
+	params.Req = coap.Message{
 		Type:      coap.Confirmable,
 		Code:      coap.GET,
 		MessageID: 1,
 	}
 
-	params.req.SetPathString(params.uri)
+	params.Req.SetPathString(params.Uri)
 
 	var msg coap.Message
 	var err error
 
-	if params.id != "" {
+	if params.Id != "" {
 		msg, err = _requestDTLS(params)
 	} else {
 		msg, err = _request(params)
@@ -145,18 +145,18 @@ func _getRequest(params RequestParams, c chan coap.Message) {
 }
 
 func _putRequest(params RequestParams, c chan coap.Message) {
-	params.req = coap.Message{
+	params.Req = coap.Message{
 		Type:      coap.Confirmable,
 		Code:      coap.PUT,
 		MessageID: 1,
-		Payload:   []byte(params.payload),
+		Payload:   []byte(params.Payload),
 	}
-	params.req.SetPathString(params.uri)
+	params.Req.SetPathString(params.Uri)
 
 	var msg coap.Message
 	var err error
 
-	if params.id != "" {
+	if params.Id != "" {
 		msg, err = _requestDTLS(params)
 	} else {
 		msg, err = _request(params)
