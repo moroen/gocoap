@@ -26,45 +26,11 @@ var ErrorTimeout = errors.New("COAP Error: Connection timeout")
 // ErrorBadIdent error
 var ErrorBadIdent = errors.New("COAP DTLS Error: Wrong credentials?")
 
+// ErrorHandshake error
+var ErrorHandshake = errors.New("COAP DTLS Error: Handshake timeout")
+
 // ErrorNoConfig error
 var ErrorNoConfig = errors.New("COAP Error: No config")
-
-/*
-func _getRequest(URI string, c chan CoapResult) {
-
-	var result CoapResult
-
-	conf, err := GetConfig()
-	if err != nil {
-		result.err = ErrorNoConfig
-		c <- result
-		return
-	}
-
-	conn, err := canopus.DialDTLS(conf.Gateway, conf.Identity, conf.Passkey)
-	if err != nil {
-		result.err = err
-		c <- result
-		return
-	}
-
-	req := canopus.NewRequest(canopus.MessageConfirmable, canopus.Get)
-	req.SetStringPayload("Hello, canopus")
-	req.SetRequestURI(URI)
-
-	resp, err := conn.Send(req)
-	if err != nil {
-		result.err = ErrorBadIdent
-		c <- result
-		return
-	}
-
-	// response := resp.GetMessage().GetPayload()
-	result.err = nil
-	result.msg = resp.GetMessage().GetPayload()
-	c <- result
-}
-*/
 
 func _request(params RequestParams) (retmsg coap.Message, err error) {
 	return params.Req, nil
@@ -83,11 +49,11 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 	peerParams := &dtls.PeerParams{
 		Addr:             fmt.Sprintf("%s:%d", params.Host, params.Port),
 		Identity:         params.Id,
-		HandshakeTimeout: time.Second * 15}
+		HandshakeTimeout: time.Second * 3}
 
 	peer, err := listner.AddPeerWithParams(peerParams)
 	if err != nil {
-		panic(err.Error())
+		return coap.Message{}, ErrorHandshake
 	}
 
 	peer.UseQueue(true)
@@ -120,7 +86,8 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 	return msg, nil
 }
 
-func _getRequest(params RequestParams, c chan coap.Message) {
+// GetRequest sends a default get
+func GetRequest(params RequestParams) (response []byte, err error) {
 	params.Req = coap.Message{
 		Type:      coap.Confirmable,
 		Code:      coap.GET,
@@ -130,67 +97,33 @@ func _getRequest(params RequestParams, c chan coap.Message) {
 	params.Req.SetPathString(params.Uri)
 
 	var msg coap.Message
-	var err error
 
 	if params.Id != "" {
 		msg, err = _requestDTLS(params)
 	} else {
 		msg, err = _request(params)
 	}
-
-	if err != nil {
-		panic(err.Error())
-	}
-	c <- msg
+	return msg.Payload, err
 }
 
-func _putRequest(params RequestParams, c chan coap.Message) {
+// PutRequest sends a default Put-request
+func PutRequest(params RequestParams) (response []byte, err error) {
 	params.Req = coap.Message{
 		Type:      coap.Confirmable,
 		Code:      coap.PUT,
 		MessageID: 1,
 		Payload:   []byte(params.Payload),
 	}
+
 	params.Req.SetPathString(params.Uri)
 
 	var msg coap.Message
-	var err error
 
 	if params.Id != "" {
 		msg, err = _requestDTLS(params)
 	} else {
 		msg, err = _request(params)
 	}
-	if err != nil {
-		panic(err.Error())
-	}
-	c <- msg
-}
 
-// GetRequest sends a default get
-func GetRequest(params RequestParams) (response []byte, err error) {
-	c := make(chan coap.Message)
-
-	go _getRequest(params, c)
-
-	select {
-	case res := <-c:
-		return res.Payload, nil
-	case <-time.After(time.Second * 60):
-		return nil, ErrorTimeout
-	}
-}
-
-// PutRequest sends a default Put-request
-func PutRequest(params RequestParams) (response []byte, err error) {
-	c := make(chan coap.Message)
-
-	go _putRequest(params, c)
-
-	select {
-	case res := <-c:
-		return res.Payload, nil
-	case <-time.After(time.Second * 5):
-		return nil, ErrorTimeout
-	}
+	return msg.Payload, err
 }
