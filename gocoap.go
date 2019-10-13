@@ -1,7 +1,6 @@
 package gocoap
 
 import (
-	"errors"
 	"fmt"
 
 	"time"
@@ -19,18 +18,6 @@ type RequestParams struct {
 	Req     coap.Message
 	Payload string
 }
-
-// ErrorTimeout error
-var ErrorTimeout = errors.New("COAP Error: Connection timeout")
-
-// ErrorBadIdent error
-var ErrorBadIdent = errors.New("COAP DTLS Error: Wrong credentials?")
-
-// ErrorHandshake error
-var ErrorHandshake = errors.New("COAP DTLS Error: Handshake timeout")
-
-// ErrorNoConfig error
-var ErrorNoConfig = errors.New("COAP Error: No config")
 
 func _request(params RequestParams) (retmsg coap.Message, err error) {
 	return params.Req, nil
@@ -83,7 +70,24 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 		panic(err.Error())
 	}
 
-	return msg, nil
+	switch msg.Code {
+	case coap.MethodNotAllowed:
+		return msg, MethodNotAllowed
+	case coap.NotFound:
+		return msg, UriNotFound
+	case coap.Content:
+		return msg, nil
+	case coap.Changed:
+		return msg, nil
+	case coap.Created:
+		return msg, nil
+	case coap.BadRequest:
+		return msg, BadRequest
+	case coap.Unauthorized:
+		return msg, Unauthorized
+	}
+
+	return msg, UnknownError
 }
 
 // GetRequest sends a default get
@@ -108,9 +112,32 @@ func GetRequest(params RequestParams) (response []byte, err error) {
 
 // PutRequest sends a default Put-request
 func PutRequest(params RequestParams) (response []byte, err error) {
+
 	params.Req = coap.Message{
 		Type:      coap.Confirmable,
 		Code:      coap.PUT,
+		MessageID: 1,
+		Payload:   []byte(params.Payload),
+	}
+
+	params.Req.SetPathString(params.Uri)
+
+	var msg coap.Message
+
+	if params.Id != "" {
+		msg, err = _requestDTLS(params)
+	} else {
+		msg, err = _request(params)
+	}
+
+	return msg.Payload, err
+}
+
+// PostRequest sends a default Post-request
+func PostRequest(params RequestParams) (response []byte, err error) {
+	params.Req = coap.Message{
+		Type:      coap.Confirmable,
+		Code:      coap.POST,
 		MessageID: 1,
 		Payload:   []byte(params.Payload),
 	}
