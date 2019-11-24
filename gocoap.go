@@ -1,12 +1,13 @@
 package gocoap
 
 import (
+	"context"
 	"fmt"
-
+	"strings"
 	"time"
 
-	coap "github.com/dustin/go-coap"
-	"github.com/eriklupander/dtls"
+	coap "github.com/go-ocf/go-coap"
+	"github.com/pion/dtls"
 )
 
 type RequestParams struct {
@@ -19,138 +20,100 @@ type RequestParams struct {
 	Payload string
 }
 
-func _request(params RequestParams) (retmsg coap.Message, err error) {
-	return params.Req, nil
-}
-
-func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
-	mks := dtls.NewKeystoreInMemory()
-	dtls.SetKeyStores([]dtls.Keystore{mks})
-	mks.AddKey(params.Id, []byte(params.Key))
-
-	listner, err := dtls.NewUdpListener(":0", time.Second*900)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	peerParams := &dtls.PeerParams{
-		Addr:             fmt.Sprintf("%s:%d", params.Host, params.Port),
-		Identity:         params.Id,
-		HandshakeTimeout: time.Second * 3}
-
-	peer, err := listner.AddPeerWithParams(peerParams)
-	if err != nil {
-		return coap.Message{}, ErrorHandshake
-	}
-
-	peer.UseQueue(true)
-
-	data, err := params.Req.MarshalBinary()
-	if err != nil {
-		panic(err.Error())
-	}
-
-	err = peer.Write(data)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	respData, err := peer.Read(time.Second)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	msg, err := coap.ParseMessage(respData)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	err = listner.Shutdown()
-	if err != nil {
-		panic(err.Error())
-	}
-
-	switch msg.Code {
+func _returnErrorFromCode(code coap.COAPCode) error {
+	switch code {
 	case coap.MethodNotAllowed:
-		return msg, MethodNotAllowed
+		return MethodNotAllowed
 	case coap.NotFound:
-		return msg, UriNotFound
+		return UriNotFound
 	case coap.Content:
-		return msg, nil
+		return nil
 	case coap.Changed:
-		return msg, nil
+		return nil
 	case coap.Created:
-		return msg, nil
+		return nil
 	case coap.BadRequest:
-		return msg, BadRequest
+		return BadRequest
 	case coap.Unauthorized:
-		return msg, Unauthorized
+		return Unauthorized
 	}
-
-	return msg, UnknownError
+	return nil
 }
 
-// GetRequest sends a default get
-func GetRequest(params RequestParams) (response []byte, err error) {
-	params.Req = coap.Message{
-		Type:      coap.Confirmable,
-		Code:      coap.GET,
-		MessageID: 1,
-	}
-
-	params.Req.SetPathString(params.Uri)
-
-	var msg coap.Message
-
+func _getConnection(params RequestParams) (conn *coap.ClientConn, err error) {
 	if params.Id != "" {
-		msg, err = _requestDTLS(params)
+		conn, err = coap.DialDTLS("udp", fmt.Sprintf("%s:%d", params.Host, params.Port), &dtls.Config{
+			PSK: func(hint []byte) ([]byte, error) {
+				// fmt.Printf("Server's hint: %s \n", hint)
+				return []byte(params.Key), nil
+			},
+			PSKIdentityHint: []byte(params.Id),
+			CipherSuites:    []dtls.CipherSuiteID{dtls.TLS_PSK_WITH_AES_128_CCM_8},
+		})
 	} else {
-		msg, err = _request(params)
+		conn, err = coap.Dial("udp", fmt.Sprintf("%s:%d", params.Host, params.Port))
 	}
-	return msg.Payload, err
+
+	return conn, err
+}
+
+// API
+
+// GetRequest sends a get
+func GetRequest(params RequestParams) (response []byte, err error) {
+	conn, err := _getConnection(params)
+	if err != nil {
+		return response, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	resp, err := conn.GetWithContext(ctx, params.Uri)
+	if err != nil {
+		return response, err
+	}
+
+	return resp.Payload(), _returnErrorFromCode(resp.Code())
 }
 
 // PutRequest sends a default Put-request
 func PutRequest(params RequestParams) (response []byte, err error) {
-
-	params.Req = coap.Message{
-		Type:      coap.Confirmable,
-		Code:      coap.PUT,
-		MessageID: 1,
-		Payload:   []byte(params.Payload),
+	conn, err := _getConnection(params)
+	if err != nil {
+		return response, err
 	}
 
-	params.Req.SetPathString(params.Uri)
+	r := strings.NewReader(params.Payload)
 
-	var msg coap.Message
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 
-	if params.Id != "" {
-		msg, err = _requestDTLS(params)
-	} else {
-		msg, err = _request(params)
+	resp, err := conn.PutWithContext(ctx, params.Uri, coap.TextPlain, r)
+	if err != nil {
+		return response, err
 	}
 
-	return msg.Payload, err
+	return resp.Payload(), _returnErrorFromCode(resp.Code())
 }
 
 // PostRequest sends a default Post-request
 func PostRequest(params RequestParams) (response []byte, err error) {
-	params.Req = coap.Message{
-		Type:      coap.Confirmable,
-		Code:      coap.POST,
-		MessageID: 1,
-		Payload:   []byte(params.Payload),
+	conn, err := _getConnection(params)
+	if err != nil {
+		return response, err
 	}
 
-	params.Req.SetPathString(params.Uri)
+	r := strings.NewReader(params.Payload)
 
-	var msg coap.Message
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 
-	if params.Id != "" {
-		msg, err = _requestDTLS(params)
-	} else {
-		msg, err = _request(params)
+	resp, err := conn.PostWithContext(ctx, params.Uri, coap.TextPlain, r)
+
+	if err != nil {
+		return response, err
 	}
 
-	return msg.Payload, err
+	return resp.Payload(), _returnErrorFromCode(resp.Code())
 }
