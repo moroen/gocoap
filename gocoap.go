@@ -7,6 +7,7 @@ import (
 	"time"
 
 	coap "github.com/go-ocf/go-coap"
+	"github.com/go-ocf/go-coap/codes"
 	"github.com/pion/dtls"
 )
 
@@ -20,21 +21,22 @@ type RequestParams struct {
 	Payload string
 }
 
-func _returnErrorFromCode(code coap.COAPCode) error {
+func _returnErrorFromCode(code codes.Code) error {
 	switch code {
-	case coap.MethodNotAllowed:
+
+	case codes.MethodNotAllowed:
 		return MethodNotAllowed
-	case coap.NotFound:
+	case codes.NotFound:
 		return UriNotFound
-	case coap.Content:
+	case codes.Content:
 		return nil
-	case coap.Changed:
+	case codes.Changed:
 		return nil
-	case coap.Created:
+	case codes.Created:
 		return nil
-	case coap.BadRequest:
+	case codes.BadRequest:
 		return BadRequest
-	case coap.Unauthorized:
+	case codes.Unauthorized:
 		return Unauthorized
 	}
 	return nil
