@@ -20,7 +20,17 @@ type RequestParams struct {
 }
 
 func _request(params RequestParams) (retmsg coap.Message, err error) {
-	return params.Req, nil
+	conn, err := coap.Dial("udp", fmt.Sprintf("%s:%d", params.Host, params.Port))
+	if err != nil {
+		return retmsg, err
+	}
+
+	resp, err := conn.Send(params.Req)
+	if err != nil {
+		return retmsg, err
+	}
+
+	return *resp, err
 }
 
 func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
