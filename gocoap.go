@@ -19,6 +19,27 @@ type RequestParams struct {
 	Payload string
 }
 
+func _processMessage(msg coap.Message) error {
+	switch msg.Code {
+	case coap.MethodNotAllowed:
+		return MethodNotAllowed
+	case coap.NotFound:
+		return UriNotFound
+	case coap.Content:
+		return nil
+	case coap.Changed:
+		return nil
+	case coap.Created:
+		return nil
+	case coap.BadRequest:
+		return BadRequest
+	case coap.Unauthorized:
+		return Unauthorized
+	}
+
+	return UnknownError
+}
+
 func _request(params RequestParams) (retmsg coap.Message, err error) {
 	conn, err := coap.Dial("udp", fmt.Sprintf("%s:%d", params.Host, params.Port))
 	if err != nil {
@@ -29,6 +50,8 @@ func _request(params RequestParams) (retmsg coap.Message, err error) {
 	if err != nil {
 		return retmsg, err
 	}
+
+	err = _processMessage(*resp)
 
 	return *resp, err
 }
@@ -80,24 +103,8 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 		panic(err.Error())
 	}
 
-	switch msg.Code {
-	case coap.MethodNotAllowed:
-		return msg, MethodNotAllowed
-	case coap.NotFound:
-		return msg, UriNotFound
-	case coap.Content:
-		return msg, nil
-	case coap.Changed:
-		return msg, nil
-	case coap.Created:
-		return msg, nil
-	case coap.BadRequest:
-		return msg, BadRequest
-	case coap.Unauthorized:
-		return msg, Unauthorized
-	}
-
-	return msg, UnknownError
+	err = _processMessage(msg)
+	return msg, err
 }
 
 // GetRequest sends a default get
