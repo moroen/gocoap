@@ -85,12 +85,12 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 
 	err = peer.Write(data)
 	if err != nil {
-		panic(err.Error())
+		return coap.Message{}, ErrorWriteTimeout
 	}
 
 	respData, err := peer.Read(time.Second)
 	if err != nil {
-		panic(err.Error())
+		return coap.Message{}, ErrorReadTimeout
 	}
 
 	msg, err := coap.ParseMessage(respData)

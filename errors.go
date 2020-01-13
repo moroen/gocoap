@@ -11,6 +11,12 @@ var ErrorBadIdent = errors.New("COAP DTLS Error: Wrong credentials?")
 // ErrorHandshake error
 var ErrorHandshake = errors.New("COAP DTLS Error: Handshake timeout")
 
+// ErrorReadTimeout error
+var ErrorReadTimeout = errors.New("COAP DTLS Error: Read timeout")
+
+// ErrorWriteTimeout error
+var ErrorWriteTimeout = errors.New("COAP DTLS Error: Write timeout")
+
 // ErrorNoConfig error
 var ErrorNoConfig = errors.New("COAP Error: No config")
 
