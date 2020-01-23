@@ -37,7 +37,7 @@ func _processMessage(msg coap.Message) error {
 		return Unauthorized
 	}
 
-	return UnknownError
+	return ErrorUnknownError
 }
 
 func _request(params RequestParams) (retmsg coap.Message, err error) {
@@ -63,7 +63,7 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 
 	listner, err := dtls.NewUdpListener(":0", time.Second*900)
 	if err != nil {
-		panic(err.Error())
+		return coap.Message{}, ErrorTimeout
 	}
 
 	peerParams := &dtls.PeerParams{
@@ -80,7 +80,7 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 
 	data, err := params.Req.MarshalBinary()
 	if err != nil {
-		panic(err.Error())
+		return coap.Message{}, ErrorUnknownError
 	}
 
 	err = peer.Write(data)
@@ -95,12 +95,12 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 
 	msg, err := coap.ParseMessage(respData)
 	if err != nil {
-		panic(err.Error())
+		return coap.Message{}, ErrorBadData
 	}
 
 	err = listner.Shutdown()
 	if err != nil {
-		panic(err.Error())
+		return coap.Message{}, ErrorTimeout
 	}
 
 	err = _processMessage(msg)

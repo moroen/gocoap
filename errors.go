@@ -20,10 +20,10 @@ var ErrorWriteTimeout = errors.New("COAP DTLS Error: Write timeout")
 // ErrorNoConfig error
 var ErrorNoConfig = errors.New("COAP Error: No config")
 
-// ErrorMethodNotAllowed error
+// MethodNotAllowed error
 var MethodNotAllowed = errors.New("COAP Error: Method not allowed")
 
-// UriNotFound error
+// UriNotFound
 var UriNotFound = errors.New("COAP Error: Uri not found")
 
 // Unauthorized
@@ -32,5 +32,8 @@ var Unauthorized = errors.New("COAP Error: Unauthorized")
 // BadRequest
 var BadRequest = errors.New("COAP Error: Bad Request")
 
-// UnknowError
-var UnknownError = errors.New("COAP Error: Unknown status")
+// ErrorBadData
+var ErrorBadData = errors.New("COAP Error: Bad returndata")
+
+// ErrorUnknowError
+var ErrorUnknownError = errors.New("COAP Error: Unknown status")
