@@ -2,6 +2,7 @@ package gocoap
 
 import (
 	"fmt"
+	"log"
 
 	"time"
 
@@ -19,8 +20,8 @@ type RequestParams struct {
 	Payload string
 }
 
-var listner *dtls.Listener
-var peer *dtls.Peer
+var _listner *dtls.Listener
+var _peer *dtls.Peer
 
 func _processMessage(msg coap.Message) error {
 	switch msg.Code {
@@ -62,31 +63,40 @@ func _request(params RequestParams) (retmsg coap.Message, err error) {
 func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error) {
 	fmt.Println("Getting DTLS-connection")
 
-	mks := dtls.NewKeystoreInMemory()
-	dtls.SetKeyStores([]dtls.Keystore{mks})
-	mks.AddKey(params.Id, []byte(params.Key))
+	if _listner == nil {
+		fmt.Println("Getting listner")
+		mks := dtls.NewKeystoreInMemory()
+		dtls.SetKeyStores([]dtls.Keystore{mks})
+		mks.AddKey(params.Id, []byte(params.Key))
 
-	listner, err := dtls.NewUdpListener(":0", time.Second*900)
-	if err != nil {
-		panic(err.Error())
-		// return coap.Message{}, ErrorTimeout
+		newListner, err := dtls.NewUdpListener(":0", time.Second*900)
+		if err != nil {
+			panic(err.Error())
+			// return coap.Message{}, ErrorTimeout
+		}
+		_listner = newListner
 	}
 
-	peerParams := &dtls.PeerParams{
-		Addr:             fmt.Sprintf("%s:%d", params.Host, params.Port),
-		Identity:         params.Id,
-		HandshakeTimeout: time.Second * 3}
+	if _peer == nil {
+		fmt.Println("Getting peer")
 
-	peer, err := listner.AddPeerWithParams(peerParams)
-	if err != nil {
-		panic(err.Error())
-		// err = listner.Shutdown()
-		//return coap.Message{}, ErrorHandshake
+		peerParams := &dtls.PeerParams{
+			Addr:             fmt.Sprintf("%s:%d", params.Host, params.Port),
+			Identity:         params.Id,
+			HandshakeTimeout: time.Second * 3}
+
+		newPeer, err := _listner.AddPeerWithParams(peerParams)
+		if err != nil {
+			panic(err.Error())
+			// err = listner.Shutdown()
+			//return coap.Message{}, ErrorHandshake
+		}
+
+		newPeer.UseQueue(true)
+		_peer = newPeer
 	}
 
-	peer.UseQueue(true)
-
-	return listner, peer, err
+	return _listner, _peer, nil
 }
 
 func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
@@ -95,33 +105,41 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 
 	data, err := params.Req.MarshalBinary()
 	if err != nil {
-		err = listner.Shutdown()
+		// err = listner.Shutdown()
 		return coap.Message{}, ErrorUnknownError
 	}
 
 	err = peer.Write(data)
 	if err != nil {
-		err = listner.Shutdown()
+		// err = listner.Shutdown()
 		return coap.Message{}, ErrorWriteTimeout
 	}
 
 	respData, err := peer.Read(time.Second)
 	if err != nil {
-		err = listner.Shutdown()
-		return coap.Message{}, ErrorReadTimeout
+		log.Println("Read Timeout")
+		// peer.Close(dtls.AlertDesc_HandshakeFailure)
+		listner.Shutdown()
+		_peer = nil
+		_listner = nil
+
+		log.Println("Retrying request")
+		return _requestDTLS(params)
+		// return coap.Message{}, ErrorReadTimeout
 	}
 
 	msg, err := coap.ParseMessage(respData)
 	if err != nil {
-		err = listner.Shutdown()
+		// err = listner.Shutdown()
 		return coap.Message{}, ErrorBadData
 	}
 
-	err = listner.Shutdown()
-	if err != nil {
-		return coap.Message{}, ErrorTimeout
-	}
-
+	/*
+		err = listner.Shutdown()
+		if err != nil {
+			return coap.Message{}, ErrorTimeout
+		}
+	*/
 	err = _processMessage(msg)
 	return msg, err
 }
