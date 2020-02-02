@@ -19,6 +19,9 @@ type RequestParams struct {
 	Payload string
 }
 
+var listner *dtls.Listener
+var peer *dtls.Peer
+
 func _processMessage(msg coap.Message) error {
 	switch msg.Code {
 	case coap.MethodNotAllowed:
@@ -56,14 +59,17 @@ func _request(params RequestParams) (retmsg coap.Message, err error) {
 	return *resp, err
 }
 
-func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
+func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error) {
+	fmt.Println("Getting DTLS-connection")
+
 	mks := dtls.NewKeystoreInMemory()
 	dtls.SetKeyStores([]dtls.Keystore{mks})
 	mks.AddKey(params.Id, []byte(params.Key))
 
 	listner, err := dtls.NewUdpListener(":0", time.Second*900)
 	if err != nil {
-		return coap.Message{}, ErrorTimeout
+		panic(err.Error())
+		// return coap.Message{}, ErrorTimeout
 	}
 
 	peerParams := &dtls.PeerParams{
@@ -73,33 +79,41 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 
 	peer, err := listner.AddPeerWithParams(peerParams)
 	if err != nil {
-    		err = listner.Shutdown()    
-		return coap.Message{}, ErrorHandshake
+		panic(err.Error())
+		// err = listner.Shutdown()
+		//return coap.Message{}, ErrorHandshake
 	}
 
 	peer.UseQueue(true)
 
+	return listner, peer, err
+}
+
+func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
+
+	listner, peer, err := getDTLSConnection(params)
+
 	data, err := params.Req.MarshalBinary()
 	if err != nil {
-    		err = listner.Shutdown()
+		err = listner.Shutdown()
 		return coap.Message{}, ErrorUnknownError
 	}
 
 	err = peer.Write(data)
 	if err != nil {
-    		err = listner.Shutdown()
+		err = listner.Shutdown()
 		return coap.Message{}, ErrorWriteTimeout
 	}
 
 	respData, err := peer.Read(time.Second)
 	if err != nil {
-    		err = listner.Shutdown()
+		err = listner.Shutdown()
 		return coap.Message{}, ErrorReadTimeout
 	}
 
 	msg, err := coap.ParseMessage(respData)
 	if err != nil {
-    		err = listner.Shutdown()
+		err = listner.Shutdown()
 		return coap.Message{}, ErrorBadData
 	}
 
