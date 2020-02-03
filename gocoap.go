@@ -64,7 +64,7 @@ func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error)
 	fmt.Println("Getting DTLS-connection")
 
 	if _listner == nil {
-		fmt.Println("Getting listner")
+		fmt.Println("Creating listner")
 		mks := dtls.NewKeystoreInMemory()
 		dtls.SetKeyStores([]dtls.Keystore{mks})
 		mks.AddKey(params.Id, []byte(params.Key))
@@ -78,7 +78,7 @@ func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error)
 	}
 
 	if _peer == nil {
-		fmt.Println("Getting peer")
+		fmt.Println("Creating peer")
 
 		peerParams := &dtls.PeerParams{
 			Addr:             fmt.Sprintf("%s:%d", params.Host, params.Port),
@@ -87,9 +87,8 @@ func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error)
 
 		newPeer, err := _listner.AddPeerWithParams(peerParams)
 		if err != nil {
-			panic(err.Error())
-			// err = listner.Shutdown()
-			//return coap.Message{}, ErrorHandshake
+
+			return nil, nil, ErrorHandshake
 		}
 
 		newPeer.UseQueue(true)
@@ -102,6 +101,9 @@ func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error)
 func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 
 	listner, peer, err := getDTLSConnection(params)
+	if err != nil {
+		return coap.Message{}, err
+	}
 
 	data, err := params.Req.MarshalBinary()
 	if err != nil {
@@ -111,19 +113,25 @@ func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
 
 	err = peer.Write(data)
 	if err != nil {
-		// err = listner.Shutdown()
-		return coap.Message{}, ErrorWriteTimeout
+		log.Println("Read Timeout")
+
+		listner.Shutdown()
+		_peer = nil
+		_listner = nil
+
+		log.Println("Retrying Write request")
+		return _requestDTLS(params)
 	}
 
 	respData, err := peer.Read(time.Second)
 	if err != nil {
 		log.Println("Read Timeout")
-		// peer.Close(dtls.AlertDesc_HandshakeFailure)
+
 		listner.Shutdown()
 		_peer = nil
 		_listner = nil
 
-		log.Println("Retrying request")
+		log.Println("Retrying Read request")
 		return _requestDTLS(params)
 		// return coap.Message{}, ErrorReadTimeout
 	}
