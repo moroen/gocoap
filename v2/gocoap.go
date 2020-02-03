@@ -118,8 +118,12 @@ func _requestDTLS(params RequestParams, retry int) (retmsg coap.Message, err err
 		_peer = nil
 		_listner = nil
 
-		log.Println("Retrying Write request")
-		return _requestDTLS(params)
+		if retry < retryLimit {
+			log.Println("Retrying Write request")
+			return _requestDTLS(params, retry+1)
+		} else {
+			return coap.Message{}, err
+		}
 	}
 
 	respData, err := peer.Read(time.Second)
@@ -130,9 +134,12 @@ func _requestDTLS(params RequestParams, retry int) (retmsg coap.Message, err err
 		_peer = nil
 		_listner = nil
 
-		log.Println("Retrying Read request")
-		return _requestDTLS(params)
-		// return coap.Message{}, ErrorReadTimeout
+		if retry < retryLimit {
+			log.Println("Retrying Read request")
+			return _requestDTLS(params, retry+1)
+		} else {
+			return coap.Message{}, err
+		}
 	}
 
 	msg, err := coap.ParseMessage(respData)
@@ -157,7 +164,7 @@ func GetRequest(params RequestParams) (response []byte, err error) {
 	var msg coap.Message
 
 	if params.Id != "" {
-		msg, err = _requestDTLS(params)
+		msg, err = _requestDTLS(params, 0)
 	} else {
 		msg, err = _request(params)
 	}
@@ -179,7 +186,7 @@ func PutRequest(params RequestParams) (response []byte, err error) {
 	var msg coap.Message
 
 	if params.Id != "" {
-		msg, err = _requestDTLS(params)
+		msg, err = _requestDTLS(params, 0)
 	} else {
 		msg, err = _request(params)
 	}
@@ -201,7 +208,7 @@ func PostRequest(params RequestParams) (response []byte, err error) {
 	var msg coap.Message
 
 	if params.Id != "" {
-		msg, err = _requestDTLS(params)
+		msg, err = _requestDTLS(params, 0)
 	} else {
 		msg, err = _request(params)
 	}
