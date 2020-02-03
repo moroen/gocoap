@@ -63,10 +63,7 @@ func _request(params RequestParams) (retmsg coap.Message, err error) {
 }
 
 func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error) {
-	fmt.Println("Getting DTLS-connection")
-
 	if _listner == nil {
-		fmt.Println("Creating listner")
 		mks := dtls.NewKeystoreInMemory()
 		dtls.SetKeyStores([]dtls.Keystore{mks})
 		mks.AddKey(params.Id, []byte(params.Key))
@@ -79,8 +76,6 @@ func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error)
 	}
 
 	if _peer == nil {
-		fmt.Println("Creating peer")
-
 		peerParams := &dtls.PeerParams{
 			Addr:             fmt.Sprintf("%s:%d", params.Host, params.Port),
 			Identity:         params.Id,
