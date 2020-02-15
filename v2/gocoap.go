@@ -21,7 +21,7 @@ type RequestParams struct {
 	Payload string
 }
 
-var _listner *dtls.Listener
+var _listener *dtls.Listener
 var _peer *dtls.Peer
 
 var retryLimit = 3
@@ -64,7 +64,7 @@ func _request(params RequestParams) (retmsg coap.Message, err error) {
 }
 
 func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error) {
-	if _listner == nil {
+	if _listener == nil {
 		mks := dtls.NewKeystoreInMemory()
 		dtls.SetKeyStores([]dtls.Keystore{mks})
 		mks.AddKey(params.Id, []byte(params.Key))
@@ -73,7 +73,7 @@ func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error)
 		if err != nil {
 			return nil, nil, ErrorHandshake
 		}
-		_listner = newListner
+		_listener = newListner
 	}
 
 	if _peer == nil {
@@ -82,7 +82,7 @@ func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error)
 			Identity:         params.Id,
 			HandshakeTimeout: time.Second * 3}
 
-		newPeer, err := _listner.AddPeerWithParams(peerParams)
+		newPeer, err := _listener.AddPeerWithParams(peerParams)
 		if err != nil {
 			return nil, nil, ErrorHandshake
 		}
@@ -91,7 +91,7 @@ func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error)
 		_peer = newPeer
 	}
 
-	return _listner, _peer, nil
+	return _listener, _peer, nil
 }
 
 func _requestDTLS(params RequestParams, retry int) (retmsg coap.Message, err error) {
@@ -112,7 +112,7 @@ func _requestDTLS(params RequestParams, retry int) (retmsg coap.Message, err err
 
 		listner.Shutdown()
 		_peer = nil
-		_listner = nil
+		_listener = nil
 
 		if retry < retryLimit {
 			log.Println("Retrying Write request")
@@ -128,7 +128,7 @@ func _requestDTLS(params RequestParams, retry int) (retmsg coap.Message, err err
 
 		listner.Shutdown()
 		_peer = nil
-		_listner = nil
+		_listener = nil
 
 		if retry < retryLimit {
 			log.Println("Retrying Read request")
@@ -146,6 +146,8 @@ func _requestDTLS(params RequestParams, retry int) (retmsg coap.Message, err err
 	err = _processMessage(msg)
 	return msg, err
 }
+
+// Observe a uri
 
 // GetRequest sends a default get
 func GetRequest(params RequestParams) (response []byte, err error) {
