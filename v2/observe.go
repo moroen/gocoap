@@ -52,13 +52,11 @@ func getObserveDTLSConnection(params ObserveParams) (*dtls.Listener, *dtls.Peer,
 	return _obsListener, _obsPeer, nil
 }
 
-func Observe(params ObserveParams, returnMsg chan []byte, stop chan bool) {
-
-	log.Println("Observing ", params.Uri)
-
+func Observe(params ObserveParams, returnMsg chan []byte, stop chan bool, status chan error) {
 	listener, peer, err := getObserveDTLSConnection(params)
 	if err != nil {
-		panic(err.Error())
+		status <- ErrorHandshake
+		return
 	}
 
 	for i, uri := range params.Uri {
@@ -74,12 +72,14 @@ func Observe(params ObserveParams, returnMsg chan []byte, stop chan bool) {
 
 		data, err := params.Req.MarshalBinary()
 		if err != nil {
-			panic(err.Error())
+			status <- ErrorUnknownError
+			return
 		}
 
 		err = peer.Write(data)
 		if err != nil {
-			panic(err.Error())
+			status <- ErrorWriteTimeout
+			return
 		}
 	}
 
@@ -88,6 +88,7 @@ func Observe(params ObserveParams, returnMsg chan []byte, stop chan bool) {
 		case <-stop:
 			// log.Println("Stop received")
 			listener.Shutdown()
+			close(returnMsg)
 			return
 		default:
 			respData, err := peer.Read(10 * time.Second)
@@ -102,7 +103,8 @@ func Observe(params ObserveParams, returnMsg chan []byte, stop chan bool) {
 
 			msg, err := coap.ParseMessage(respData)
 			if err != nil {
-				panic(err.Error())
+				status <- ErrorBadData
+				close(returnMsg)
 			}
 			returnMsg <- msg.Payload
 		}
