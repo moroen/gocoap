@@ -52,11 +52,10 @@ func getObserveDTLSConnection(params ObserveParams) (*dtls.Listener, *dtls.Peer,
 	return _obsListener, _obsPeer, nil
 }
 
-func Observe(params ObserveParams, returnMsg chan []byte, stop chan bool, status chan error) {
+func Observe(params ObserveParams, returnMsg chan []byte, stop chan bool, status chan error) error {
 	listener, peer, err := getObserveDTLSConnection(params)
 	if err != nil {
-		status <- ErrorHandshake
-		return
+		return ErrorHandshake
 	}
 
 	for i, uri := range params.Uri {
@@ -72,41 +71,42 @@ func Observe(params ObserveParams, returnMsg chan []byte, stop chan bool, status
 
 		data, err := params.Req.MarshalBinary()
 		if err != nil {
-			status <- ErrorUnknownError
-			return
+			return ErrorUnknownError
 		}
 
 		err = peer.Write(data)
 		if err != nil {
-			status <- ErrorWriteTimeout
-			return
+			return ErrorWriteTimeout
 		}
 	}
 
-	for {
-		select {
-		case <-stop:
-			// log.Println("Stop received")
-			listener.Shutdown()
-			close(returnMsg)
-			return
-		default:
-			respData, err := peer.Read(10 * time.Second)
-			if err != nil {
-				if listener == nil {
-					log.Println("Observe Listener nil, reopening")
-					listener, peer, err = getObserveDTLSConnection(params)
-				}
-				// log.Println("Timeout")
-				continue
-			}
-
-			msg, err := coap.ParseMessage(respData)
-			if err != nil {
-				status <- ErrorBadData
+	go func(returnMsg chan []byte, stop chan bool, status chan error) {
+		for {
+			select {
+			case <-stop:
+				// log.Println("Stop received")
+				listener.Shutdown()
 				close(returnMsg)
+				return
+			default:
+				respData, err := peer.Read(10 * time.Second)
+				if err != nil {
+					if listener == nil {
+						log.Println("Observe Listener nil, reopening")
+						listener, peer, err = getObserveDTLSConnection(params)
+					}
+					// log.Println("Timeout")
+					continue
+				}
+
+				msg, err := coap.ParseMessage(respData)
+				if err != nil {
+					status <- ErrorBadData
+					close(returnMsg)
+				}
+				returnMsg <- msg.Payload
 			}
-			returnMsg <- msg.Payload
 		}
-	}
+	}(returnMsg, stop, status)
+	return nil
 }
