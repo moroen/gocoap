@@ -10,25 +10,33 @@ import (
 )
 
 type ObserveParams struct {
-	Host string
-	Port int
-	Uri  []string
-	Id   string
-	Key  string
-	Req  coap.Message
+	Host            string
+	Port            int
+	URI             []string
+	ID              string
+	Key             string
+	Req             coap.Message
+	RetryConnection bool
 }
 
 var _obsListener *dtls.Listener
 var _obsPeer *dtls.Peer
 
 func getObserveDTLSConnection(params ObserveParams) (*dtls.Listener, *dtls.Peer, error) {
+	retryCount := 1
+
+	if params.RetryConnection {
+		retryCount = 3
+	}
+
 	if _obsListener == nil {
 		mks := dtls.NewKeystoreInMemory()
 		dtls.SetKeyStores([]dtls.Keystore{mks})
-		mks.AddKey(params.Id, []byte(params.Key))
+		mks.AddKey(params.ID, []byte(params.Key))
 
 		newListner, err := dtls.NewUdpListener(":0", time.Second*900)
 		if err != nil {
+			log.Println("Error: New UdpListener")
 			return nil, nil, ErrorHandshake
 		}
 		_obsListener = newListner
@@ -37,28 +45,39 @@ func getObserveDTLSConnection(params ObserveParams) (*dtls.Listener, *dtls.Peer,
 	if _obsPeer == nil {
 		peerParams := &dtls.PeerParams{
 			Addr:             fmt.Sprintf("%s:%d", params.Host, params.Port),
-			Identity:         params.Id,
+			Identity:         params.ID,
 			HandshakeTimeout: time.Second * 3}
 
-		newPeer, err := _obsListener.AddPeerWithParams(peerParams)
-		if err != nil {
-			return nil, nil, ErrorHandshake
+		for retryCount > 0 {
+			newPeer, err := _obsListener.AddPeerWithParams(peerParams)
+			if err != nil {
+				log.Printf(" Create peer retrycount: %d", retryCount)
+				retryCount--
+			} else {
+				retryCount = 0
+				newPeer.UseQueue(true)
+				_obsPeer = newPeer
+			}
 		}
-
-		newPeer.UseQueue(true)
-		_obsPeer = newPeer
 	}
 
-	return _obsListener, _obsPeer, nil
+	if _obsPeer != nil {
+		return _obsListener, _obsPeer, nil
+	} else {
+		return nil, nil, ErrorHandshake
+	}
 }
 
 func Observe(params ObserveParams, returnMsg chan []byte, stop chan bool, status chan error) error {
+
 	listener, peer, err := getObserveDTLSConnection(params)
+
 	if err != nil {
+		log.Println("Error Handshake - Giving up")
 		return ErrorHandshake
 	}
 
-	for i, uri := range params.Uri {
+	for i, uri := range params.URI {
 
 		params.Req = coap.Message{
 			Type:      coap.NonConfirmable,
