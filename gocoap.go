@@ -2,11 +2,13 @@ package gocoap
 
 import (
 	"fmt"
+	"log"
 
 	"time"
 
 	coap "github.com/dustin/go-coap"
-	"github.com/eriklupander/dtls"
+	// "github.com/eriklupander/dtls"
+	"github.com/moroen/dtls"
 )
 
 type RequestParams struct {
@@ -18,6 +20,11 @@ type RequestParams struct {
 	Req     coap.Message
 	Payload string
 }
+
+var _listener *dtls.Listener
+var _peer *dtls.Peer
+
+var retryLimit = 3
 
 func _processMessage(msg coap.Message) error {
 	switch msg.Code {
@@ -56,61 +63,91 @@ func _request(params RequestParams) (retmsg coap.Message, err error) {
 	return *resp, err
 }
 
-func _requestDTLS(params RequestParams) (retmsg coap.Message, err error) {
-	mks := dtls.NewKeystoreInMemory()
-	dtls.SetKeyStores([]dtls.Keystore{mks})
-	mks.AddKey(params.Id, []byte(params.Key))
+func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error) {
+	if _listener == nil {
+		mks := dtls.NewKeystoreInMemory()
+		dtls.SetKeyStores([]dtls.Keystore{mks})
+		mks.AddKey(params.Id, []byte(params.Key))
 
-	listner, err := dtls.NewUdpListener(":0", time.Second*900)
-	if err != nil {
-		return coap.Message{}, ErrorTimeout
+		newListner, err := dtls.NewUdpListener(":0", time.Second*900)
+		if err != nil {
+			return nil, nil, ErrorHandshake
+		}
+		_listener = newListner
 	}
 
-	peerParams := &dtls.PeerParams{
-		Addr:             fmt.Sprintf("%s:%d", params.Host, params.Port),
-		Identity:         params.Id,
-		HandshakeTimeout: time.Second * 3}
+	if _peer == nil {
+		peerParams := &dtls.PeerParams{
+			Addr:             fmt.Sprintf("%s:%d", params.Host, params.Port),
+			Identity:         params.Id,
+			HandshakeTimeout: time.Second * 3}
 
-	peer, err := listner.AddPeerWithParams(peerParams)
-	if err != nil {
-    		err = listner.Shutdown()    
-		return coap.Message{}, ErrorHandshake
+		newPeer, err := _listener.AddPeerWithParams(peerParams)
+		if err != nil {
+			return nil, nil, ErrorHandshake
+		}
+
+		newPeer.UseQueue(true)
+		_peer = newPeer
 	}
 
-	peer.UseQueue(true)
+	return _listener, _peer, nil
+}
+
+func _requestDTLS(params RequestParams, retry int) (retmsg coap.Message, err error) {
+
+	listner, peer, err := getDTLSConnection(params)
+	if err != nil {
+		return coap.Message{}, err
+	}
 
 	data, err := params.Req.MarshalBinary()
 	if err != nil {
-    		err = listner.Shutdown()
 		return coap.Message{}, ErrorUnknownError
 	}
 
 	err = peer.Write(data)
 	if err != nil {
-    		err = listner.Shutdown()
-		return coap.Message{}, ErrorWriteTimeout
+		log.Println("Read Timeout")
+
+		listner.Shutdown()
+		_peer = nil
+		_listener = nil
+
+		if retry < retryLimit {
+			log.Println("Retrying Write request")
+			return _requestDTLS(params, retry+1)
+		} else {
+			return coap.Message{}, err
+		}
 	}
 
 	respData, err := peer.Read(time.Second)
 	if err != nil {
-    		err = listner.Shutdown()
-		return coap.Message{}, ErrorReadTimeout
+		log.Println("Read Timeout")
+
+		listner.Shutdown()
+		_peer = nil
+		_listener = nil
+
+		if retry < retryLimit {
+			log.Println("Retrying Read request")
+			return _requestDTLS(params, retry+1)
+		} else {
+			return coap.Message{}, err
+		}
 	}
 
 	msg, err := coap.ParseMessage(respData)
 	if err != nil {
-    		err = listner.Shutdown()
 		return coap.Message{}, ErrorBadData
-	}
-
-	err = listner.Shutdown()
-	if err != nil {
-		return coap.Message{}, ErrorTimeout
 	}
 
 	err = _processMessage(msg)
 	return msg, err
 }
+
+// Observe a uri
 
 // GetRequest sends a default get
 func GetRequest(params RequestParams) (response []byte, err error) {
@@ -125,7 +162,7 @@ func GetRequest(params RequestParams) (response []byte, err error) {
 	var msg coap.Message
 
 	if params.Id != "" {
-		msg, err = _requestDTLS(params)
+		msg, err = _requestDTLS(params, 0)
 	} else {
 		msg, err = _request(params)
 	}
@@ -147,7 +184,7 @@ func PutRequest(params RequestParams) (response []byte, err error) {
 	var msg coap.Message
 
 	if params.Id != "" {
-		msg, err = _requestDTLS(params)
+		msg, err = _requestDTLS(params, 0)
 	} else {
 		msg, err = _request(params)
 	}
@@ -169,7 +206,7 @@ func PostRequest(params RequestParams) (response []byte, err error) {
 	var msg coap.Message
 
 	if params.Id != "" {
-		msg, err = _requestDTLS(params)
+		msg, err = _requestDTLS(params, 0)
 	} else {
 		msg, err = _request(params)
 	}
