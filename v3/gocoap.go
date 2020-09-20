@@ -66,15 +66,12 @@ func _request(params RequestParams) (retmsg coap.Message, err error) {
 func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error) {
 	if _listener == nil {
 		for i := 0; i < _retryLimit; i++ {
-			fmt.Printf("Creating new listener: try %d\n", i)
 			mks := dtls.NewKeystoreInMemory()
 			dtls.SetKeyStores([]dtls.Keystore{mks})
 			mks.AddKey(params.Id, []byte(params.Key))
 
 			newListner, err := dtls.NewUdpListener(":0", time.Second*2)
-			if err != nil {
-				fmt.Print("listener failed, retry")
-			} else {
+			if err == nil {
 				_listener = newListner
 				break
 			}
@@ -87,17 +84,13 @@ func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error)
 	if _peer == nil {
 		for i := 0; i < _retryLimit; i++ {
 
-			fmt.Printf("Creating new peer: try %d\n", i)
-
 			peerParams := &dtls.PeerParams{
 				Addr:             fmt.Sprintf("%s:%d", params.Host, params.Port),
 				Identity:         params.Id,
 				HandshakeTimeout: time.Second * 2}
 
 			newPeer, err := _listener.AddPeerWithParams(peerParams)
-			if err != nil {
-				fmt.Print("peer failed, retry")
-			} else {
+			if err == nil {
 				newPeer.UseQueue(true)
 				_peer = newPeer
 				return _listener, _peer, nil
@@ -109,12 +102,13 @@ func getDTLSConnection(params RequestParams) (*dtls.Listener, *dtls.Peer, error)
 	return _listener, _peer, nil
 }
 
+// SetRetryLimit sets number of retries, default i 3
 func SetRetryLimit(limit int) {
 	_retryLimit = limit
 }
 
+// CloseDTLSConnection closes the connection
 func CloseDTLSConnection() error {
-	fmt.Println("Closing connection")
 	if _listener != nil {
 		_listener.Shutdown()
 	}
@@ -126,17 +120,6 @@ func CloseDTLSConnection() error {
 }
 
 func _requestDTLS(params RequestParams, retry int) (retmsg coap.Message, err error) {
-
-	/*
-		if params.Req.Code == coap.PUT {
-			fmt.Println("Doing a put request")
-			// listner.Shutdown()
-			_peer = nil
-			_listener = nil
-		}
-	*/
-
-	fmt.Println("_requestDTLS called")
 
 	listner, peer, err := getDTLSConnection(params)
 	if err != nil {
@@ -185,8 +168,6 @@ func _requestDTLS(params RequestParams, retry int) (retmsg coap.Message, err err
 		return coap.Message{}, ErrorBadData
 	}
 
-	// fmt.Println(msg.Code)
-
 	if msg.Code == coap.Changed {
 		params.Req.Code = coap.GET
 		params.Req.Payload = nil
@@ -194,7 +175,6 @@ func _requestDTLS(params RequestParams, retry int) (retmsg coap.Message, err err
 	}
 
 	err = _processMessage(msg)
-	fmt.Println("_requestDTLS done")
 	return msg, err
 }
 
