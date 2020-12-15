@@ -140,27 +140,26 @@ func _requestDTLS(params RequestParams, retry int) (retmsg coap.Message, err err
 		_listener = nil
 
 		if retry < _retryLimit {
-			log.Println("Retrying Write request")
+			// log.Println("Retrying Write request")
 			return _requestDTLS(params, retry+1)
 		}
-		return coap.Message{}, err
+		return coap.Message{}, ErrorWriteTimeout
 
 	}
 
 	respData, err := peer.Read(time.Second)
 	if err != nil {
-		log.Println("Read Timeout")
+		// log.Println("Read Timeout")
 
 		listner.Shutdown()
 		_peer = nil
 		_listener = nil
 
 		if retry < _retryLimit {
-			log.Println("Retrying Read request")
+			// log.Println("Retrying Read request")
 			return _requestDTLS(params, retry+1)
-		} else {
-			return coap.Message{}, err
 		}
+		return coap.Message{}, ErrorReadTimeout
 	}
 
 	msg, err := coap.ParseMessage(respData)
