@@ -91,30 +91,23 @@ func _requestDTLS(params RequestParams, retry int) (retmsg []byte, err error) {
 	if params.Method == PUT {
 		payload := bytes.NewReader([]byte(params.Payload))
 
-		log.Println("Payload", params.Payload)
-
 		resp, err := co.Put(ctx, path, message.AppJSON, payload)
 		if err != nil {
 			log.Fatal(err.Error())
 		}
 
-		log.Printf("Result %+v", resp)
-
 		m, err := resp.ReadBody()
 		return m, err
-
 	}
 
 	if params.Method == POST {
 		payload := bytes.NewReader([]byte(params.Payload))
-		log.Println("Payload: ", payload)
 
 		resp, err := co.Post(ctx, params.Uri, message.AppJSON, payload)
 		if err != nil {
 			return nil, err
 		}
 
-		log.Printf("Result %+v", resp)
 		m, err := resp.ReadBody()
 		return m, err
 	}
@@ -139,15 +132,13 @@ func GetRequest(params RequestParams) (response []byte, err error) {
 
 // PutRequest sends a default Put-request
 func PutRequest(params RequestParams) (response []byte, err error) {
-	log.Println("PutRequest")
-
 	var msg []byte
 
 	if params.Payload == "" {
 		return nil, ErrorNoPayload
 	}
 
-	params.Method = POST
+	params.Method = PUT
 
 	if params.Id != "" {
 		msg, err = _requestDTLS(params, 0)

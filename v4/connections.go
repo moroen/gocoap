@@ -6,11 +6,11 @@ import (
 	"github.com/plgd-dev/go-coap/v2/udp/client"
 )
 
-var connection *client.ClientConn
+var _connection *client.ClientConn
 
 func getDTLSConnection(param RequestParams) (*client.ClientConn, error) {
-	if connection != nil {
-		return connection, nil
+	if _connection != nil {
+		return _connection, nil
 	}
 
 	co, err := dtls.Dial(param.getHost(), &piondtls.Config{
@@ -24,14 +24,14 @@ func getDTLSConnection(param RequestParams) (*client.ClientConn, error) {
 	if err != nil {
 		err = ErrorHandshake
 	}
-	connection = co
+	_connection = co
 	return co, err
 }
 
 // CloseDTLSConnection closes the connection
 func CloseDTLSConnection() error {
-	if connection != nil {
-		err := connection.Close()
+	if _connection != nil {
+		err := _connection.Close()
 		return err
 	}
 	return nil
