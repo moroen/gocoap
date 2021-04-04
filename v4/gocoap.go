@@ -65,20 +65,6 @@ func SetRetryLimit(limit int) {
 	_retryLimit = limit
 }
 
-/*
-// CloseDTLSConnection closes the connection
-func CloseDTLSConnection() error {
-	if _listener != nil {
-		_listener.Shutdown()
-	}
-
-	_listener = nil
-	_peer = nil
-
-	return nil
-}
-*/
-
 func _requestDTLS(params RequestParams, retry int) (retmsg []byte, err error) {
 
 	co, err := getDTLSConnection(params)
@@ -172,19 +158,15 @@ func PutRequest(params RequestParams) (response []byte, err error) {
 	return msg, err
 }
 
-/*
 // PostRequest sends a default Post-request
 func PostRequest(params RequestParams) (response []byte, err error) {
-	params.Req = coap.Message{
-		Type:      coap.Confirmable,
-		Code:      coap.POST,
-		MessageID: 1,
-		Payload:   []byte(params.Payload),
+	var msg []byte
+
+	if params.Payload == "" {
+		return nil, ErrorNoPayload
 	}
 
-	params.Req.SetPathString(params.Uri)
-
-	var msg coap.Message
+	params.Method = POST
 
 	if params.Id != "" {
 		msg, err = _requestDTLS(params, 0)
@@ -192,6 +174,5 @@ func PostRequest(params RequestParams) (response []byte, err error) {
 		msg, err = _request(params)
 	}
 
-	return msg.Payload, err
+	return msg, err
 }
-*/
