@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/plgd-dev/go-coap/v2/message"
+	"github.com/plgd-dev/go-coap/v2/message/codes"
+	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
 	// coap "github.com/dustin/go-coap"
 	// "github.com/eriklupander/dtls"
 	// "github.com/moroen/dtls"
@@ -18,28 +20,28 @@ import (
 
 var _retryLimit = 3
 
-/*
-func _processMessage(msg coap.Message) error {
-	switch msg.Code {
-	case coap.MethodNotAllowed:
+func _processMessage(resp *pool.Message) error {
+	log.Printf("%+v", resp)
+	log.Println(resp.Code())
+	switch resp.Code() {
+	case codes.Content:
+		return nil
+	case codes.MethodNotAllowed:
 		return MethodNotAllowed
-	case coap.NotFound:
+	case codes.NotFound:
 		return UriNotFound
-	case coap.Content:
+	case codes.Changed:
 		return nil
-	case coap.Changed:
+	case codes.Created:
 		return nil
-	case coap.Created:
-		return nil
-	case coap.BadRequest:
+	case codes.BadRequest:
 		return BadRequest
-	case coap.Unauthorized:
+	case codes.Unauthorized:
 		return Unauthorized
 	}
 
 	return ErrorUnknownError
 }
-*/
 
 func _request(params RequestParams) (retmsg []byte, err error) {
 	/*
@@ -82,9 +84,14 @@ func _requestDTLS(params RequestParams, retry int) (retmsg []byte, err error) {
 		if err != nil {
 			log.Fatalf("Error sending request: %v", err)
 		}
+
 		m, err := resp.ReadBody()
+		if err != nil {
+			return nil, err
+		}
 		// log.Printf("Response payload: %v", string(m))
 
+		err = _processMessage(resp)
 		return m, err
 	}
 
@@ -97,7 +104,11 @@ func _requestDTLS(params RequestParams, retry int) (retmsg []byte, err error) {
 		}
 
 		m, err := resp.ReadBody()
-		return m, err
+		if err != nil {
+			return nil, err
+		}
+
+		return m, _processMessage(resp)
 	}
 
 	if params.Method == POST {
@@ -109,7 +120,11 @@ func _requestDTLS(params RequestParams, retry int) (retmsg []byte, err error) {
 		}
 
 		m, err := resp.ReadBody()
-		return m, err
+		if err != nil {
+			return nil, err
+		}
+
+		return m, _processMessage(resp)
 	}
 
 	return nil, nil
