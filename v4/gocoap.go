@@ -15,14 +15,6 @@ import (
 	// "github.com/moroen/dtls"
 )
 
-// var _listener *dtls.Listener
-// var _peer *dtls.Peer
-
-var _retryLimit = 3
-
-// ReportMode 0: Observe 1: Return from request
-var _reportMode = 0
-
 func _processMessage(resp *pool.Message) error {
 	switch resp.Code() {
 	case codes.Content:
@@ -61,15 +53,6 @@ func _request(params RequestParams) (retmsg []byte, err error) {
 		return *resp, err
 	*/
 	return nil, nil
-}
-
-// SetRetryLimit sets number of retries, default i 3
-func SetRetryLimit(limit int) {
-	_retryLimit = limit
-}
-
-func SetReportMode(mode int) {
-	_reportMode = mode
 }
 
 func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
@@ -113,10 +96,6 @@ func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
 			return nil, err
 		}
 
-		if _reportMode == 1 {
-			params.Method = GET
-			return _requestDTLS(params)
-		}
 		return m, _processMessage(resp)
 	}
 
