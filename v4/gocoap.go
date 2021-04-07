@@ -20,9 +20,10 @@ import (
 
 var _retryLimit = 3
 
+// ReportMode 0: Observe 1: Return from request
+var _reportMode = 0
+
 func _processMessage(resp *pool.Message) error {
-	log.Printf("%+v", resp)
-	log.Println(resp.Code())
 	switch resp.Code() {
 	case codes.Content:
 		return nil
@@ -67,7 +68,11 @@ func SetRetryLimit(limit int) {
 	_retryLimit = limit
 }
 
-func _requestDTLS(params RequestParams, retry int) (retmsg []byte, err error) {
+func SetReportMode(mode int) {
+	_reportMode = mode
+}
+
+func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
 
 	co, err := getDTLSConnection(params)
 	if err != nil {
@@ -89,9 +94,9 @@ func _requestDTLS(params RequestParams, retry int) (retmsg []byte, err error) {
 		if err != nil {
 			return nil, err
 		}
-		// log.Printf("Response payload: %v", string(m))
 
 		err = _processMessage(resp)
+		// log.Printf("Response: %+v\nBody: %s\n", resp, m)
 		return m, err
 	}
 
@@ -108,6 +113,10 @@ func _requestDTLS(params RequestParams, retry int) (retmsg []byte, err error) {
 			return nil, err
 		}
 
+		if _reportMode == 1 {
+			params.Method = GET
+			return _requestDTLS(params)
+		}
 		return m, _processMessage(resp)
 	}
 
@@ -137,7 +146,7 @@ func GetRequest(params RequestParams) (response []byte, err error) {
 	params.Method = GET
 
 	if params.Id != "" {
-		msg, err = _requestDTLS(params, 0)
+		msg, err = _requestDTLS(params)
 	} else {
 		msg, err = _request(params)
 	}
@@ -156,7 +165,7 @@ func PutRequest(params RequestParams) (response []byte, err error) {
 	params.Method = PUT
 
 	if params.Id != "" {
-		msg, err = _requestDTLS(params, 0)
+		msg, err = _requestDTLS(params)
 	} else {
 		msg, err = _request(params)
 	}
@@ -175,7 +184,7 @@ func PostRequest(params RequestParams) (response []byte, err error) {
 	params.Method = POST
 
 	if params.Id != "" {
-		msg, err = _requestDTLS(params, 0)
+		msg, err = _requestDTLS(params)
 	} else {
 		msg, err = _request(params)
 	}

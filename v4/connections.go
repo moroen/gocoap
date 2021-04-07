@@ -10,8 +10,11 @@ var _connection *client.ClientConn
 
 func getDTLSConnection(param RequestParams) (*client.ClientConn, error) {
 	if _connection != nil {
+		// log.Println("Using old connection")
 		return _connection, nil
 	}
+
+	// log.Println("Creating new connection")
 
 	co, err := dtls.Dial(param.getHost(), &piondtls.Config{
 		PSK: func(hint []byte) ([]byte, error) {
@@ -31,8 +34,12 @@ func getDTLSConnection(param RequestParams) (*client.ClientConn, error) {
 // CloseDTLSConnection closes the connection
 func CloseDTLSConnection() error {
 	if _connection != nil {
+		// log.Println("Connection closing")
 		err := _connection.Close()
-		return err
+		if err != nil {
+			return err
+		}
+		_connection = nil
 	}
 	return nil
 }
