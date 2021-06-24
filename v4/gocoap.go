@@ -3,13 +3,13 @@ package gocoap
 import (
 	"bytes"
 	"context"
-	"log"
 
 	"time"
 
 	"github.com/plgd-dev/go-coap/v2/message"
 	"github.com/plgd-dev/go-coap/v2/message/codes"
 	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
+	log "github.com/sirupsen/logrus"
 	// coap "github.com/dustin/go-coap"
 	// "github.com/eriklupander/dtls"
 	// "github.com/moroen/dtls"
@@ -56,6 +56,7 @@ func _request(params RequestParams) (retmsg []byte, err error) {
 }
 
 func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
+	var response *pool.Message
 
 	co, err := getDTLSConnection(params)
 	if err != nil {
@@ -68,54 +69,47 @@ func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
 	defer cancel()
 
 	if params.Method == GET {
-		resp, err := co.Get(ctx, path)
-		if err != nil {
-			log.Fatalf("Error sending request: %v", err)
+		if resp, err := co.Get(ctx, path); err == nil {
+			response = resp
 		}
-
-		m, err := resp.ReadBody()
-		if err != nil {
-			return nil, err
-		}
-
-		err = _processMessage(resp)
-		// log.Printf("Response: %+v\nBody: %s\n", resp, m)
-		return m, err
 	}
 
 	if params.Method == PUT {
 		payload := bytes.NewReader([]byte(params.Payload))
-
-		resp, err := co.Put(ctx, path, message.AppJSON, payload)
-		if err != nil {
-			log.Fatal(err.Error())
+		if resp, err := co.Put(ctx, path, message.AppJSON, payload); err == nil {
+			response = resp
 		}
-
-		m, err := resp.ReadBody()
-		if err != nil {
-			return nil, err
-		}
-
-		return m, _processMessage(resp)
 	}
 
 	if params.Method == POST {
 		payload := bytes.NewReader([]byte(params.Payload))
-
-		resp, err := co.Post(ctx, params.Uri, message.AppJSON, payload)
-		if err != nil {
-			return nil, err
+		if resp, err := co.Post(ctx, path, message.AppJSON, payload); err == nil {
+			response = resp
 		}
-
-		m, err := resp.ReadBody()
-		if err != nil {
-			return nil, err
-		}
-
-		return m, _processMessage(resp)
 	}
 
-	return nil, nil
+	if err == nil {
+		if response == nil {
+			log.Debug("Response is nil")
+			CloseDTLSConnection()
+			return _requestDTLS(params)
+		} else {
+			m, err := response.ReadBody()
+			if err != nil {
+				return nil, err
+			}
+
+			err = _processMessage(response)
+			return m, err
+		}
+	} else {
+		return nil, err
+	}
+}
+
+func SetRetry(limit uint, delay int) {
+	_retryLimit = limit
+	_retryDelay = delay
 }
 
 // GetRequest sends a default get

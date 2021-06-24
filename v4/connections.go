@@ -4,18 +4,42 @@ import (
 	piondtls "github.com/pion/dtls/v2"
 	"github.com/plgd-dev/go-coap/v2/dtls"
 	"github.com/plgd-dev/go-coap/v2/udp/client"
+	log "github.com/sirupsen/logrus"
 )
 
 var _connection *client.ClientConn
+var _retryLimit uint = 3
+var _retryDelay = 1
+
+func reconnectDtlsConnection(param RequestParams) (*client.ClientConn, error) {
+	log.Debug("reconnectDtlsConnection")
+	CloseDTLSConnection()
+	conn, err := getDTLSConnection(param)
+	return conn, err
+}
 
 func getDTLSConnection(param RequestParams) (*client.ClientConn, error) {
 	if _connection != nil {
-		// log.Println("Using old connection")
+		// log.Debug("getDTLSConnection: Using old connection")
 		return _connection, nil
 	}
 
-	// log.Println("Creating new connection")
+	// log.Debug("getDTLSConnection: Creating new connection")
 
+	if conn, err := createDTLSConnection(param); err == nil {
+		_connection = conn
+		return _connection, nil
+	} else {
+		_connection = nil
+		log.WithFields(log.Fields{
+			"error": err.Error(),
+		}).Error("getDTLSConnection")
+		err = ErrorHandshake
+		return nil, err
+	}
+}
+
+func createDTLSConnection(param RequestParams) (*client.ClientConn, error) {
 	co, err := dtls.Dial(param.getHost(), &piondtls.Config{
 		PSK: func(hint []byte) ([]byte, error) {
 			// fmt.Printf("Server's hint: %s \n", hint)
