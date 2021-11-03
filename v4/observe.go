@@ -2,6 +2,9 @@ package gocoap
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -10,63 +13,85 @@ import (
 	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
 )
 
-var _observe_connection *client.ClientConn
+// var _observe_connection *client.ClientConn
+var _wgObserve sync.WaitGroup
 
 var observe_params ObserveParams
 var observe_callback func([]byte) error
-var sync chan (bool)
+
+var control context.Context
+var status context.Context
+var observe_stop func()
+var stop_done func()
 
 func Observe(params ObserveParams, callback func([]byte) error) error {
 	observe_params = params
 	observe_callback = callback
-	ObserveStart()
-	return nil
-}
 
-func ObserveStart() error {
-	doObserve(observe_params, observe_callback)
+	fmt.Println(params.KeepAlive)
+
+	control, observe_stop = context.WithCancel(context.Background())
+	status, stop_done = context.WithCancel(context.Background())
+
+	doObserve(params, callback)
+
 	return nil
 }
 
 func ObserveStop() error {
-	if sync != nil {
-		close(sync)
+	if observe_stop == nil {
+		// Observe goroutine not started
+		return errors.New("Observe goroutine not started")
 	}
+	observe_stop()
+	<-status.Done()
+	fmt.Println("Stop done")
 	return nil
 }
 
 func ObserveRestart(reconnect bool) error {
-
-	log.WithFields(log.Fields{
-		"reconnect": reconnect,
-	}).Debug("Observe restart called")
-
-	ObserveStop()
-	if reconnect {
-		closeDTLSObserveConnection()
+	if err := ObserveStop(); err == nil {
+		Observe(observe_params, observe_callback)
+		return nil
+	} else {
+		return err
 	}
-	ObserveStart()
-	return nil
 }
 
+/*
 func getDTLSObserveConnection(param RequestParams) (*client.ClientConn, error) {
+	var err error
+
 	if _observe_connection != nil {
-		// log.Println("Using old connection")
-		return _connection, nil
-	}
-	log.Debug("getDTLSObserveConnection: Creating new connection")
-	_observe_connection, err := createDTLSConnection(param)
-	if err != nil {
-		err = ErrorHandshake
+		log.Println("Using old connection")
+		return _observe_connection, nil
 	}
 
-	return _observe_connection, err
+	log.Debug("getDTLSObserveConnection: Creating new connection")
+
+	retry := 1
+
+	for retry > -1 {
+		if _observe_connection, err = createDTLSConnection(param); err == nil {
+			log.Info(fmt.Sprintf("Connected to tradfri for observe at [tcp://%s:%d]", param.Host, param.Port))
+			return _observe_connection, nil
+		} else {
+			_observe_connection = nil
+			log.WithFields(log.Fields{
+				"error": err.Error(),
+				"try":   retry,
+			}).Error("getDTLSObserveConnection")
+			retry++
+			time.Sleep(5 * time.Second)
+		}
+	}
+	return nil, ErrorHandshake
 }
 
 func closeDTLSObserveConnection() error {
 	if _observe_connection != nil {
-		log.Debug("Observe-connection closing")
-		err := _connection.Close()
+		log.Debug("Closing observe-connection")
+		err := _observe_connection.Close()
 		if err != nil {
 			return err
 		}
@@ -74,52 +99,79 @@ func closeDTLSObserveConnection() error {
 	}
 	return nil
 }
+*/
 
 func doObserve(params ObserveParams, callback func(b []byte) error) error {
 
-	defer closeDTLSObserveConnection()
-
-	co, err := getDTLSObserveConnection(RequestParams{Host: params.Host, Port: params.Port, Id: params.Id, Key: params.Key})
+	co, err := getDTLSConnection(RequestParams{Host: params.Host, Port: params.Port, Id: params.Id, Key: params.Key})
 	if err != nil {
 		return err
 	}
 
-	sync = make(chan bool)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
 	for _, uri := range params.Uri {
+		_wgObserve.Add(1)
 
-		go func(uri string, stop chan bool) {
-			log.WithFields(log.Fields{
-				"endpoint": uri,
-			}).Debug("Starting observe")
+		go func(uri string, keepAlive int) {
+			var obs *client.Observation
+			var ticker time.Ticker
 
-			obs, err := co.Observe(ctx, uri, func(req *pool.Message) {
-				m, err := req.ReadBody()
+			if params.KeepAlive > 0 {
+				ticker = *time.NewTicker(time.Duration(params.KeepAlive) * time.Second)
+			}
+
+			defer _wgObserve.Done()
+
+		loop:
+			for {
+				log.WithFields(log.Fields{
+					"endpoint": uri,
+				}).Debug("Starting observe")
+
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+
+				obs, err = co.Observe(ctx, uri, func(req *pool.Message) {
+					m, err := req.ReadBody()
+					if err != nil {
+						log.Fatal(err.Error())
+					}
+
+					observe_callback(m)
+				})
+
 				if err != nil {
-					log.Fatal(err.Error())
+					log.WithFields(log.Fields{
+						"Error": err.Error(),
+						"uri":   uri,
+					}).Error("Starting observe")
+					observe_stop()
 				}
 
-				observe_callback(m)
+				select {
+				case <-ticker.C:
+					fmt.Println("Tick")
+					obs.Cancel(ctx)
+					log.WithFields(log.Fields{
+						"endpoint": uri,
+					}).Debug("Observe stopped")
 
-			})
-
-			if err != nil {
-				log.Fatalf("Unexpected error '%v'", err)
+				case <-control.Done():
+					if obs != nil {
+						obs.Cancel(ctx)
+						log.WithFields(log.Fields{
+							"endpoint": uri,
+						}).Debug("Observe stopped")
+					} else {
+						log.WithFields(log.Fields{
+							"endpoint": uri,
+						}).Debug("Stopping observe failed")
+					}
+					break loop
+				}
 			}
-			<-stop
-			log.WithFields(log.Fields{
-				"endpoint": uri,
-			}).Debug("Stopping observe")
-
-			ctx, cancel = context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
-			obs.Cancel(ctx)
-		}(uri, sync)
+		}(uri, params.KeepAlive)
 	}
-	<-sync
-	log.Println("Observe sync done")
+	_wgObserve.Wait()
+	stop_done()
 	return nil
 }

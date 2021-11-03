@@ -90,7 +90,10 @@ func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
 
 	if err == nil {
 		if response == nil {
-			log.Debug("Response is nil")
+			log.WithFields(log.Fields{
+				"path": path,
+			}).Debug("Response is nil")
+
 			CloseDTLSConnection()
 			return _requestDTLS(params)
 		} else {

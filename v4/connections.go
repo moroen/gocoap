@@ -19,23 +19,20 @@ func reconnectDtlsConnection(param RequestParams) (*client.ClientConn, error) {
 }
 
 func getDTLSConnection(param RequestParams) (*client.ClientConn, error) {
+
 	if _connection != nil {
-		// log.Debug("getDTLSConnection: Using old connection")
+		log.Debug("getDTLSConnection: Using old connection")
 		return _connection, nil
 	}
 
-	// log.Debug("getDTLSConnection: Creating new connection")
+	log.Debug("getDTLSConnection: Creating new connection")
 
 	if conn, err := createDTLSConnection(param); err == nil {
 		_connection = conn
 		return _connection, nil
 	} else {
 		_connection = nil
-		log.WithFields(log.Fields{
-			"error": err.Error(),
-		}).Error("getDTLSConnection")
-		err = ErrorHandshake
-		return nil, err
+		return nil, ErrorHandshake
 	}
 }
 
@@ -58,7 +55,6 @@ func createDTLSConnection(param RequestParams) (*client.ClientConn, error) {
 // CloseDTLSConnection closes the connection
 func CloseDTLSConnection() error {
 	if _connection != nil {
-		// log.Println("Connection closing")
 		err := _connection.Close()
 		if err != nil {
 			return err

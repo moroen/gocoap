@@ -21,12 +21,12 @@ type RequestParams struct {
 }
 
 type ObserveParams struct {
-	Host            string
-	Port            int
-	Uri             []string
-	Id              string
-	Key             string
-	RetryConnection bool
+	Host      string
+	Port      int
+	Uri       []string
+	Id        string
+	Key       string
+	KeepAlive int
 }
 
 func (r RequestParams) getHost() string {
