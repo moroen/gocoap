@@ -1,6 +1,10 @@
 package gocoap
 
 import (
+	"context"
+	"fmt"
+	"time"
+
 	piondtls "github.com/pion/dtls/v2"
 	"github.com/plgd-dev/go-coap/v2/dtls"
 	"github.com/plgd-dev/go-coap/v2/udp/client"
@@ -11,28 +15,31 @@ var _connection *client.ClientConn
 var _retryLimit uint = 3
 var _retryDelay = 1
 
+var _cancel func()
+
 func reconnectDtlsConnection(param RequestParams) (*client.ClientConn, error) {
 	log.Debug("reconnectDtlsConnection")
 	CloseDTLSConnection()
-	conn, err := getDTLSConnection(param)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_cancel = cancel
+	conn, err := getDTLSConnection(ctx, param)
+
 	return conn, err
 }
 
-func getDTLSConnection(param RequestParams) (*client.ClientConn, error) {
+func getDTLSConnection(ctx context.Context, param RequestParams) (*client.ClientConn, error) {
 
 	if _connection != nil {
 		log.Debug("getDTLSConnection: Using old connection")
 		return _connection, nil
 	}
 
-	log.Debug("getDTLSConnection: Creating new connection")
-
 	if conn, err := createDTLSConnection(param); err == nil {
+		log.Info(fmt.Sprintf("Connected to tradfri at %s:5684", param.Host))
 		_connection = conn
 		return _connection, nil
 	} else {
-		_connection = nil
-		return nil, ErrorHandshake
+		return nil, err
 	}
 }
 

@@ -3,6 +3,7 @@ package gocoap
 import (
 	"bytes"
 	"context"
+	"fmt"
 
 	"time"
 
@@ -58,15 +59,15 @@ func _request(params RequestParams) (retmsg []byte, err error) {
 func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
 	var response *pool.Message
 
-	co, err := getDTLSConnection(params)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	co, err := getDTLSConnection(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
 	path := params.Uri
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
 
 	if params.Method == GET {
 		if resp, err := co.Get(ctx, path); err == nil {
@@ -113,6 +114,27 @@ func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
 func SetRetry(limit uint, delay int) {
 	_retryLimit = limit
 	_retryDelay = delay
+}
+
+func GetRequestWithContext(ctx context.Context, params RequestParams, retrydelay int) (response []byte, err error) {
+	ticker := time.NewTicker(time.Duration(retrydelay) * time.Second)
+	for {
+		if res, err := GetRequest(params); err == nil {
+			return res, err
+		} else {
+			log.WithFields(log.Fields{
+				"URL":   params.Uri,
+				"Error": err,
+			}).Error("GetRequestWithContext")
+		}
+		select {
+		case <-ticker.C:
+			break
+		case <-ctx.Done():
+			fmt.Println("tock")
+			return nil, ErrorHandshake
+		}
+	}
 }
 
 // GetRequest sends a default get

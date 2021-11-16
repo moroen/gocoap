@@ -19,6 +19,11 @@ var _wgObserve sync.WaitGroup
 var observe_params ObserveParams
 var observe_callback func([]byte) error
 
+// Connection
+var ctxConnection context.Context
+var connection_stop func()
+
+// Observe
 var control context.Context
 var status context.Context
 var observe_stop func()
@@ -30,6 +35,10 @@ func Observe(params ObserveParams, callback func([]byte) error) error {
 
 	fmt.Println(params.KeepAlive)
 
+	// Connection
+	ctxConnection, connection_stop = context.WithTimeout(context.Background(), 20*time.Second)
+
+	// Observe
 	control, observe_stop = context.WithCancel(context.Background())
 	status, stop_done = context.WithCancel(context.Background())
 
@@ -45,7 +54,6 @@ func ObserveStop() error {
 	}
 	observe_stop()
 	<-status.Done()
-	fmt.Println("Stop done")
 	return nil
 }
 
@@ -102,8 +110,7 @@ func closeDTLSObserveConnection() error {
 */
 
 func doObserve(params ObserveParams, callback func(b []byte) error) error {
-
-	co, err := getDTLSConnection(RequestParams{Host: params.Host, Port: params.Port, Id: params.Id, Key: params.Key})
+	co, err := getDTLSConnection(ctxConnection, RequestParams{Host: params.Host, Port: params.Port, Id: params.Id, Key: params.Key})
 	if err != nil {
 		return err
 	}
