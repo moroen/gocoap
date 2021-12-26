@@ -3,6 +3,7 @@ package gocoap
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	piondtls "github.com/pion/dtls/v2"
@@ -16,20 +17,40 @@ var _retryLimit uint = 3
 var _retryDelay = 1
 
 var _cancel func()
+var _ctx context.Context
 
 type CoapDTLSConnection struct {
+	mu                 sync.Mutex
 	Host               string
 	Port               int
 	Ident              string
 	Key                string
+	UseQueue           bool
 	OnConnect          func()
 	OnDisconnect       func()
 	OnCanceled         func()
 	OnConnectionFailed func()
 	_connection        *client.ClientConn
+	_status            int
+	queue              []CoapDTLSRequest
 }
 
-func (c *CoapDTLSConnection) Connect(ctx context.Context) error {
+type CoapDTLSRequest struct {
+	RequestMethod string
+	Uri           string
+	Payload       string
+	Handler       func([]byte, error)
+}
+
+func (c *CoapDTLSConnection) Connect() error {
+	if c._status > 0 {
+		return nil
+	}
+
+	c._status = 1 // Connecting
+
+	_ctx, _cancel = context.WithCancel(context.Background())
+
 	ticker := time.NewTicker(time.Duration(5) * time.Second)
 	for {
 		if conn, err := dtls.Dial(fmt.Sprintf("%s:%d", c.Host, c.Port), &piondtls.Config{
@@ -42,18 +63,25 @@ func (c *CoapDTLSConnection) Connect(ctx context.Context) error {
 		}); err == nil {
 			c._connection = conn
 			if c.OnConnect != nil {
+				c._status = 2
 				c.OnConnect()
 			}
+
+			if c.UseQueue {
+				c.HandleQueue()
+			}
+
 			return nil
 		} else {
 			if c.OnConnectionFailed != nil {
+				c._status = 1
 				c.OnConnectionFailed()
 			}
 		}
 		select {
 		case <-ticker.C:
 			break
-		case <-ctx.Done():
+		case <-_ctx.Done():
 			if c.OnCanceled != nil {
 				c.OnCanceled()
 			}
@@ -62,6 +90,31 @@ func (c *CoapDTLSConnection) Connect(ctx context.Context) error {
 	}
 }
 
+func (c *CoapDTLSConnection) Disconnect() error {
+	_cancel()
+	if c._status == 2 {
+		c._connection.Close()
+	}
+	c._status = 0
+	return nil
+}
+
+func (c *CoapDTLSConnection) HandleError(request CoapDTLSRequest) {
+	if c.UseQueue {
+		log.WithFields(log.Fields{
+			"Uri": request.Uri,
+		}).Debug("Adding request to queue")
+	}
+
+	c.AddToQueue(request)
+
+	if c._status == 2 {
+		c.Disconnect()
+	}
+	c.Connect()
+}
+
+/*
 func reconnectDtlsConnection(param RequestParams) (*client.ClientConn, error) {
 	log.Debug("reconnectDtlsConnection")
 	CloseDTLSConnection()
@@ -115,3 +168,4 @@ func CloseDTLSConnection() error {
 	}
 	return nil
 }
+*/

@@ -6,11 +6,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	log "github.com/sirupsen/logrus"
-
-	"github.com/plgd-dev/go-coap/v2/udp/client"
-	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
 )
 
 // var _observe_connection *client.ClientConn
@@ -110,75 +105,77 @@ func closeDTLSObserveConnection() error {
 */
 
 func doObserve(params ObserveParams, callback func(b []byte) error) error {
-	co, err := getDTLSConnection(ctxConnection, RequestParams{Host: params.Host, Port: params.Port, Id: params.Id, Key: params.Key})
-	if err != nil {
-		return err
-	}
+	/*
+		co, err := getDTLSConnection(ctxConnection, RequestParams{Host: params.Host, Port: params.Port, Id: params.Id, Key: params.Key})
+		if err != nil {
+			return err
+		}
 
-	for _, uri := range params.Uri {
-		_wgObserve.Add(1)
+		for _, uri := range params.Uri {
+			_wgObserve.Add(1)
 
-		go func(uri string, keepAlive int) {
-			var obs *client.Observation
-			var ticker time.Ticker
+			go func(uri string, keepAlive int) {
+				var obs *client.Observation
+				var ticker time.Ticker
 
-			if params.KeepAlive > 0 {
-				ticker = *time.NewTicker(time.Duration(params.KeepAlive) * time.Second)
-			}
-
-			defer _wgObserve.Done()
-
-		loop:
-			for {
-				log.WithFields(log.Fields{
-					"endpoint": uri,
-				}).Debug("Starting observe")
-
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-
-				obs, err = co.Observe(ctx, uri, func(req *pool.Message) {
-					m, err := req.ReadBody()
-					if err != nil {
-						log.Fatal(err.Error())
-					}
-
-					observe_callback(m)
-				})
-
-				if err != nil {
-					log.WithFields(log.Fields{
-						"Error": err.Error(),
-						"uri":   uri,
-					}).Error("Starting observe")
-					observe_stop()
+				if params.KeepAlive > 0 {
+					ticker = *time.NewTicker(time.Duration(params.KeepAlive) * time.Second)
 				}
 
-				select {
-				case <-ticker.C:
-					fmt.Println("Tick")
-					obs.Cancel(ctx)
+				defer _wgObserve.Done()
+
+			loop:
+				for {
 					log.WithFields(log.Fields{
 						"endpoint": uri,
-					}).Debug("Observe stopped")
+					}).Debug("Starting observe")
 
-				case <-control.Done():
-					if obs != nil {
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					defer cancel()
+
+					obs, err = co.Observe(ctx, uri, func(req *pool.Message) {
+						m, err := req.ReadBody()
+						if err != nil {
+							log.Fatal(err.Error())
+						}
+
+						observe_callback(m)
+					})
+
+					if err != nil {
+						log.WithFields(log.Fields{
+							"Error": err.Error(),
+							"uri":   uri,
+						}).Error("Starting observe")
+						observe_stop()
+					}
+
+					select {
+					case <-ticker.C:
+						fmt.Println("Tick")
 						obs.Cancel(ctx)
 						log.WithFields(log.Fields{
 							"endpoint": uri,
 						}).Debug("Observe stopped")
-					} else {
-						log.WithFields(log.Fields{
-							"endpoint": uri,
-						}).Debug("Stopping observe failed")
+
+					case <-control.Done():
+						if obs != nil {
+							obs.Cancel(ctx)
+							log.WithFields(log.Fields{
+								"endpoint": uri,
+							}).Debug("Observe stopped")
+						} else {
+							log.WithFields(log.Fields{
+								"endpoint": uri,
+							}).Debug("Stopping observe failed")
+						}
+						break loop
 					}
-					break loop
 				}
-			}
-		}(uri, params.KeepAlive)
-	}
-	_wgObserve.Wait()
-	stop_done()
+			}(uri, params.KeepAlive)
+		}
+		_wgObserve.Wait()
+		stop_done()
+	*/
 	return nil
 }

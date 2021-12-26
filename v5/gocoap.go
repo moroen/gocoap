@@ -3,9 +3,6 @@ package gocoap
 import (
 	"bytes"
 	"context"
-	"fmt"
-
-	"time"
 
 	"github.com/plgd-dev/go-coap/v2/message"
 	"github.com/plgd-dev/go-coap/v2/message/codes"
@@ -41,6 +38,15 @@ func (c *CoapDTLSConnection) GET(ctx context.Context, uri string, handler func([
 	log.WithFields(log.Fields{
 		"Uri": uri,
 	}).Debug("CoapDTLSConnection.GET")
+
+	if c._status != 2 {
+		log.WithFields(log.Fields{
+			"Error": "Not connected",
+		}).Error("COAP - GET")
+		c.HandleError(CoapDTLSRequest{RequestMethod: "GET", Uri: uri, Handler: handler})
+		return
+	}
+
 	if response, err := c._connection.Get(ctx, uri); err == nil {
 		if m, err := response.ReadBody(); err == nil {
 			handler(m, _processMessage(response))
@@ -48,7 +54,11 @@ func (c *CoapDTLSConnection) GET(ctx context.Context, uri string, handler func([
 			handler([]byte{}, err)
 		}
 	} else {
-		fmt.Println(err.Error())
+		log.WithFields(log.Fields{
+			"Error": err.Error(),
+		}).Error("Coap - GET")
+		c.HandleError(CoapDTLSRequest{RequestMethod: "GET", Uri: uri, Handler: handler})
+
 	}
 }
 
@@ -60,26 +70,29 @@ func (c *CoapDTLSConnection) PUT(ctx context.Context, uri string, payload string
 			handler([]byte{}, err)
 		}
 	} else {
-		fmt.Println(err.Error())
+		log.WithFields(log.Fields{
+			"Error": err.Error(),
+		}).Error("Coap - PUT")
 	}
 }
 
+/*
 func _request(params RequestParams) (retmsg []byte, err error) {
-	/*
-		conn, err := coap.Dial("udp", fmt.Sprintf("%s:%d", params.Host, params.Port))
-		if err != nil {
-			return retmsg, err
-		}
 
-		resp, err := conn.Send(params.Req)
-		if err != nil {
-			return retmsg, err
-		}
+	conn, err := coap.Dial("udp", fmt.Sprintf("%s:%d", params.Host, params.Port))
+	if err != nil {
+		return retmsg, err
+	}
 
-		err = _processMessage(*resp)
+	resp, err := conn.Send(params.Req)
+	if err != nil {
+		return retmsg, err
+	}
 
-		return *resp, err
-	*/
+	err = _processMessage(*resp)
+
+	return *resp, err
+
 	return nil, nil
 }
 
@@ -216,3 +229,4 @@ func PostRequest(params RequestParams) (response []byte, err error) {
 
 	return msg, err
 }
+*/
