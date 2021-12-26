@@ -41,4 +41,5 @@ var ErrorUnknownError = errors.New("COAP Error: Unknown status")
 // ErrorNoPayload
 var ErrorNoPayload = errors.New("COAP Error: No payload for request")
 
+// ErrorConnectionContextCanceled
 var ConnectionContextCanceled = errors.New("COAP Error: Connection Context Canceled")

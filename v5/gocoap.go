@@ -3,11 +3,13 @@ package gocoap
 import (
 	"bytes"
 	"context"
+	"log"
+
+	"time"
 
 	"github.com/plgd-dev/go-coap/v2/message"
 	"github.com/plgd-dev/go-coap/v2/message/codes"
 	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
-	log "github.com/sirupsen/logrus"
 	// coap "github.com/dustin/go-coap"
 	// "github.com/eriklupander/dtls"
 	// "github.com/moroen/dtls"
@@ -34,147 +36,86 @@ func _processMessage(resp *pool.Message) error {
 	return ErrorUnknownError
 }
 
-func (c *CoapDTLSConnection) GET(ctx context.Context, uri string, handler func([]byte, error)) {
-	log.WithFields(log.Fields{
-		"Uri": uri,
-	}).Debug("CoapDTLSConnection.GET")
-
-	if c._status != 2 {
-		log.WithFields(log.Fields{
-			"Error": "Not connected",
-		}).Error("COAP - GET")
-		c.HandleError(CoapDTLSRequest{RequestMethod: "GET", Uri: uri, Handler: handler})
-		return
-	}
-
-	if response, err := c._connection.Get(ctx, uri); err == nil {
-		if m, err := response.ReadBody(); err == nil {
-			handler(m, _processMessage(response))
-		} else {
-			handler([]byte{}, err)
-		}
-	} else {
-		log.WithFields(log.Fields{
-			"Error": err.Error(),
-		}).Error("Coap - GET")
-		c.HandleError(CoapDTLSRequest{RequestMethod: "GET", Uri: uri, Handler: handler})
-
-	}
-}
-
-func (c *CoapDTLSConnection) PUT(ctx context.Context, uri string, payload string, handler func([]byte, error)) {
-	if response, err := c._connection.Put(ctx, uri, message.AppJSON, bytes.NewReader([]byte(payload))); err == nil {
-		if m, err := response.ReadBody(); err == nil {
-			handler(m, _processMessage(response))
-		} else {
-			handler([]byte{}, err)
-		}
-	} else {
-		log.WithFields(log.Fields{
-			"Error": err.Error(),
-		}).Error("Coap - PUT")
-	}
-}
-
-/*
 func _request(params RequestParams) (retmsg []byte, err error) {
+	/*
+		conn, err := coap.Dial("udp", fmt.Sprintf("%s:%d", params.Host, params.Port))
+		if err != nil {
+			return retmsg, err
+		}
 
-	conn, err := coap.Dial("udp", fmt.Sprintf("%s:%d", params.Host, params.Port))
-	if err != nil {
-		return retmsg, err
-	}
+		resp, err := conn.Send(params.Req)
+		if err != nil {
+			return retmsg, err
+		}
 
-	resp, err := conn.Send(params.Req)
-	if err != nil {
-		return retmsg, err
-	}
+		err = _processMessage(*resp)
 
-	err = _processMessage(*resp)
-
-	return *resp, err
-
+		return *resp, err
+	*/
 	return nil, nil
 }
 
 func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
-	var response *pool.Message
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	co, err := getDTLSConnection(ctx, params)
+	co, err := getDTLSConnection(params)
 	if err != nil {
 		return nil, err
 	}
 
 	path := params.Uri
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
 	if params.Method == GET {
-		if resp, err := co.Get(ctx, path); err == nil {
-			response = resp
+		resp, err := co.Get(ctx, path)
+		if err != nil {
+			log.Fatalf("Error sending request: %v", err)
 		}
+
+		m, err := resp.ReadBody()
+		if err != nil {
+			return nil, err
+		}
+
+		err = _processMessage(resp)
+		// log.Printf("Response: %+v\nBody: %s\n", resp, m)
+		return m, err
 	}
 
 	if params.Method == PUT {
 		payload := bytes.NewReader([]byte(params.Payload))
-		if resp, err := co.Put(ctx, path, message.AppJSON, payload); err == nil {
-			response = resp
+
+		resp, err := co.Put(ctx, path, message.AppJSON, payload)
+		if err != nil {
+			log.Fatal(err.Error())
 		}
+
+		m, err := resp.ReadBody()
+		if err != nil {
+			return nil, err
+		}
+
+		return m, _processMessage(resp)
 	}
 
 	if params.Method == POST {
 		payload := bytes.NewReader([]byte(params.Payload))
-		if resp, err := co.Post(ctx, path, message.AppJSON, payload); err == nil {
-			response = resp
+
+		resp, err := co.Post(ctx, params.Uri, message.AppJSON, payload)
+		if err != nil {
+			return nil, err
 		}
+
+		m, err := resp.ReadBody()
+		if err != nil {
+			return nil, err
+		}
+
+		return m, _processMessage(resp)
 	}
 
-	if err == nil {
-		if response == nil {
-			log.WithFields(log.Fields{
-				"path": path,
-			}).Debug("Response is nil")
-
-			CloseDTLSConnection()
-			return _requestDTLS(params)
-		} else {
-			m, err := response.ReadBody()
-			if err != nil {
-				return nil, err
-			}
-
-			err = _processMessage(response)
-			return m, err
-		}
-	} else {
-		return nil, err
-	}
-}
-
-func SetRetry(limit uint, delay int) {
-	_retryLimit = limit
-	_retryDelay = delay
-}
-
-func GetRequestWithContext(ctx context.Context, params RequestParams, retrydelay int) (response []byte, err error) {
-	ticker := time.NewTicker(time.Duration(retrydelay) * time.Second)
-	for {
-		if res, err := GetRequest(params); err == nil {
-			return res, err
-		} else {
-			log.WithFields(log.Fields{
-				"URL":   params.Uri,
-				"Error": err,
-			}).Error("GetRequestWithContext")
-		}
-		select {
-		case <-ticker.C:
-			break
-		case <-ctx.Done():
-			fmt.Println("tock")
-			return nil, ErrorHandshake
-		}
-	}
+	return nil, nil
 }
 
 // GetRequest sends a default get
@@ -229,4 +170,3 @@ func PostRequest(params RequestParams) (response []byte, err error) {
 
 	return msg, err
 }
-*/
