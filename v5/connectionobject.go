@@ -11,6 +11,7 @@ import (
 	"github.com/plgd-dev/go-coap/v2/dtls"
 	"github.com/plgd-dev/go-coap/v2/message"
 	"github.com/plgd-dev/go-coap/v2/udp/client"
+	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -185,6 +186,53 @@ func (c *CoapDTLSConnection) HandleQueue() {
 		case "GET":
 			ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
 			c.GET(ctx, item.Uri, item.Handler)
+		}
+	}
+}
+
+func (c *CoapDTLSConnection) Observe(ctx context.Context, wg *sync.WaitGroup, uri string, handler func([]byte), keepAlive int) {
+	var ticker *time.Ticker
+	wg.Add(1)
+	defer wg.Done()
+
+	if keepAlive == 0 {
+		ticker = time.NewTicker(1 * time.Second)
+		ticker.Stop()
+	} else {
+		ticker = time.NewTicker(time.Duration(keepAlive) * time.Second)
+		defer ticker.Stop()
+	}
+
+	for {
+		_ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+
+		obs, err := c._connection.Observe(_ctx, uri, func(req *pool.Message) {
+			if m, err := req.ReadBody(); err == nil {
+				handler(m)
+			}
+			cancel()
+		})
+		if err != nil {
+			log.WithFields(log.Fields{
+				"Error": err.Error(),
+			}).Error("CoapDTLSConnection - Observe")
+			c.HandleError(CoapDTLSRequest{Uri: uri, RequestMethod: "OBSERVE"})
+			return
+		}
+
+		select {
+		case <-ticker.C:
+			log.WithFields(log.Fields{
+				"uri": uri,
+			}).Debug("Observe keepalive")
+			obs.Cancel(_ctx)
+			break
+		case <-ctx.Done():
+			log.WithFields(log.Fields{
+				"uri": uri,
+			}).Debug("Canceling observe")
+			obs.Cancel(_ctx)
+			return
 		}
 	}
 }
