@@ -15,7 +15,7 @@ import (
 	// "github.com/moroen/dtls"
 )
 
-func _processMessage(resp *pool.Message) error {
+func ProcessMessageCode(resp *pool.Message) error {
 	switch resp.Code() {
 	case codes.Content:
 		return nil
@@ -78,7 +78,7 @@ func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
 			return nil, err
 		}
 
-		err = _processMessage(resp)
+		err = ProcessMessageCode(resp)
 		// log.Printf("Response: %+v\nBody: %s\n", resp, m)
 		return m, err
 	}
@@ -96,7 +96,7 @@ func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
 			return nil, err
 		}
 
-		return m, _processMessage(resp)
+		return m, ProcessMessageCode(resp)
 	}
 
 	if params.Method == POST {
@@ -112,7 +112,7 @@ func _requestDTLS(params RequestParams) (retmsg []byte, err error) {
 			return nil, err
 		}
 
-		return m, _processMessage(resp)
+		return m, ProcessMessageCode(resp)
 	}
 
 	return nil, nil

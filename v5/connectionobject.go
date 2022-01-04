@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,6 +43,9 @@ type CoapDTLSRequest struct {
 	Uri           string
 	Payload       string
 	Handler       func([]byte, error)
+	Context       context.Context
+	WaitGroup     *sync.WaitGroup
+	KeepAlive     int
 }
 
 func (c *CoapDTLSConnection) Connect() error {
@@ -98,6 +102,9 @@ func (c *CoapDTLSConnection) Disconnect() error {
 		c._connection.Close()
 	}
 	c._status = 0
+	if c.OnDisconnect != nil {
+		c.OnDisconnect()
+	}
 	return nil
 }
 
@@ -131,7 +138,7 @@ func (c *CoapDTLSConnection) GET(ctx context.Context, uri string, handler func([
 
 	if response, err := c._connection.Get(ctx, uri); err == nil {
 		if m, err := response.ReadBody(); err == nil {
-			handler(m, _processMessage(response))
+			handler(m, ProcessMessageCode(response))
 		} else {
 			handler([]byte{}, err)
 		}
@@ -147,7 +154,7 @@ func (c *CoapDTLSConnection) GET(ctx context.Context, uri string, handler func([
 func (c *CoapDTLSConnection) PUT(ctx context.Context, uri string, payload string, handler func([]byte, error)) {
 	if response, err := c._connection.Put(ctx, uri, message.AppJSON, bytes.NewReader([]byte(payload))); err == nil {
 		if m, err := response.ReadBody(); err == nil {
-			handler(m, _processMessage(response))
+			handler(m, ProcessMessageCode(response))
 		} else {
 			handler([]byte{}, err)
 		}
@@ -186,14 +193,33 @@ func (c *CoapDTLSConnection) HandleQueue() {
 		case "GET":
 			ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
 			c.GET(ctx, item.Uri, item.Handler)
+		case "OBSERVE":
+			c.Observe(item.Context, item.WaitGroup, item.Uri, item.Handler, item.KeepAlive)
 		}
 	}
 }
 
-func (c *CoapDTLSConnection) Observe(ctx context.Context, wg *sync.WaitGroup, uri string, handler func([]byte), keepAlive int) {
+func (c *CoapDTLSConnection) Observe(ctx context.Context, wg *sync.WaitGroup, uri string, handler func([]byte, error), keepAlive int) {
 	var ticker *time.Ticker
 	wg.Add(1)
 	defer wg.Done()
+
+	if e := ctx.Err(); e == context.Canceled {
+		log.WithFields(log.Fields{
+			"uri":   uri,
+			"error": e.Error(),
+		}).Debug("CoapDTLSConnection - Observe")
+		return
+	}
+
+	if c._status != 2 {
+		log.WithFields(log.Fields{
+			"uri":   uri,
+			"error": "Not connected to gateway, adding to queue",
+		}).Debug("CoapDTLSConnection - Observe")
+		c.HandleError(CoapDTLSRequest{Uri: uri, RequestMethod: "OBSERVE", Handler: handler, Context: ctx, WaitGroup: wg, KeepAlive: keepAlive})
+		return
+	}
 
 	if keepAlive == 0 {
 		ticker = time.NewTicker(1 * time.Second)
@@ -204,19 +230,26 @@ func (c *CoapDTLSConnection) Observe(ctx context.Context, wg *sync.WaitGroup, ur
 	}
 
 	for {
-		_ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
 
 		obs, err := c._connection.Observe(_ctx, uri, func(req *pool.Message) {
 			if m, err := req.ReadBody(); err == nil {
-				handler(m)
+				handler(m, ProcessMessageCode(req))
 			}
-			cancel()
 		})
 		if err != nil {
+
+			description := err.Error()
+
+			if strings.Contains(description, "cannot write to connection") {
+				c.HandleError(CoapDTLSRequest{Uri: uri, RequestMethod: "OBSERVE", Handler: handler, Context: ctx, WaitGroup: wg, KeepAlive: keepAlive})
+			}
+
 			log.WithFields(log.Fields{
+				"uri":   uri,
 				"Error": err.Error(),
-			}).Error("CoapDTLSConnection - Observe")
-			c.HandleError(CoapDTLSRequest{Uri: uri, RequestMethod: "OBSERVE"})
+			}).Error("CoapDTLSConnection - Observe - Init")
 			return
 		}
 
@@ -225,13 +258,17 @@ func (c *CoapDTLSConnection) Observe(ctx context.Context, wg *sync.WaitGroup, ur
 			log.WithFields(log.Fields{
 				"uri": uri,
 			}).Debug("Observe keepalive")
-			obs.Cancel(_ctx)
+			_ctx2, done2 := context.WithTimeout(context.Background(), 2*time.Second)
+			defer done2()
+			obs.Cancel(_ctx2)
 			break
 		case <-ctx.Done():
 			log.WithFields(log.Fields{
 				"uri": uri,
 			}).Debug("Canceling observe")
-			obs.Cancel(_ctx)
+			_ctx3, done3 := context.WithTimeout(context.Background(), 2*time.Second)
+			defer done3()
+			obs.Cancel(_ctx3)
 			return
 		}
 	}
