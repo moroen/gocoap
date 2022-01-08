@@ -165,6 +165,20 @@ func (c *CoapDTLSConnection) PUT(ctx context.Context, uri string, payload string
 	}
 }
 
+func (c *CoapDTLSConnection) POST(ctx context.Context, uri string, payload string, handler func([]byte, error)) {
+	if response, err := c._connection.Post(ctx, uri, message.AppJSON, bytes.NewReader([]byte(payload))); err == nil {
+		if m, err := response.ReadBody(); err == nil {
+			handler(m, ProcessMessageCode(response))
+		} else {
+			handler([]byte{}, err)
+		}
+	} else {
+		log.WithFields(log.Fields{
+			"Error": err.Error(),
+		}).Error("Coap - POST")
+	}
+}
+
 func (c *CoapDTLSConnection) AddToQueue(request CoapDTLSRequest) {
 	c.mu.Lock()
 	c.queue = append(c.queue, request)
@@ -193,6 +207,12 @@ func (c *CoapDTLSConnection) HandleQueue() {
 		case "GET":
 			ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
 			c.GET(ctx, item.Uri, item.Handler)
+		case "PUT":
+			ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+			c.PUT(ctx, item.Uri, item.Payload, item.Handler)
+		case "POST":
+			ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+			c.POST(ctx, item.Uri, item.Payload, item.Handler)
 		case "OBSERVE":
 			c.Observe(item.Context, item.WaitGroup, item.Uri, item.Handler, item.KeepAlive)
 		}
