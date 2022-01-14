@@ -19,8 +19,8 @@ import (
 var _retryLimit uint = 3
 var _retryDelay = 1
 
-var _cancel func()
-var _ctx context.Context
+// var _cancel func()
+// var _ctx context.Context
 
 type CoapDTLSConnection struct {
 	mu                 sync.Mutex
@@ -29,6 +29,7 @@ type CoapDTLSConnection struct {
 	Ident              string
 	Key                string
 	UseQueue           bool
+	OnFirstConnect     func()
 	OnConnect          func()
 	OnDisconnect       func()
 	OnCanceled         func()
@@ -36,6 +37,12 @@ type CoapDTLSConnection struct {
 	_connection        *client.ClientConn
 	_status            int
 	queue              []CoapDTLSRequest
+	ConnectContext     context.Context
+	ConnectCancel      func()
+	ObserveContext     context.Context
+	ObserveWaitGroup   sync.WaitGroup
+	ObserveDone        func()
+	KeepAlive          int
 }
 
 type CoapDTLSRequest struct {
@@ -45,7 +52,20 @@ type CoapDTLSRequest struct {
 	Handler       func([]byte, error)
 	Context       context.Context
 	WaitGroup     *sync.WaitGroup
-	KeepAlive     int
+}
+
+func (c *CoapDTLSConnection) _keepAlive() {
+	ticker := time.NewTicker(time.Duration(c.KeepAlive) * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			c.Disconnect()
+			time.Sleep(500 * time.Millisecond)
+			c.Connect()
+		case <-c.ConnectContext.Done():
+			return
+		}
+	}
 }
 
 func (c *CoapDTLSConnection) Connect() error {
@@ -55,7 +75,7 @@ func (c *CoapDTLSConnection) Connect() error {
 
 	c._status = 1 // Connecting
 
-	_ctx, _cancel = context.WithCancel(context.Background())
+	c.ConnectContext, c.ConnectCancel = context.WithCancel(context.Background())
 
 	ticker := time.NewTicker(time.Duration(5) * time.Second)
 	for {
@@ -68,6 +88,14 @@ func (c *CoapDTLSConnection) Connect() error {
 			CipherSuites:    []piondtls.CipherSuiteID{piondtls.TLS_PSK_WITH_AES_128_CCM_8},
 		}); err == nil {
 			c._connection = conn
+			c.ObserveContext, c.ObserveDone = context.WithCancel(context.Background())
+
+			if c.OnFirstConnect != nil {
+				c._status = 2
+				c.OnFirstConnect()
+				c.OnFirstConnect = nil
+			}
+
 			if c.OnConnect != nil {
 				c._status = 2
 				c.OnConnect()
@@ -75,6 +103,10 @@ func (c *CoapDTLSConnection) Connect() error {
 
 			if c.UseQueue {
 				c.HandleQueue()
+			}
+
+			if c.KeepAlive > 0 {
+				c._keepAlive()
 			}
 
 			return nil
@@ -87,7 +119,7 @@ func (c *CoapDTLSConnection) Connect() error {
 		select {
 		case <-ticker.C:
 			break
-		case <-_ctx.Done():
+		case <-c.ConnectContext.Done():
 			if c.OnCanceled != nil {
 				c.OnCanceled()
 			}
@@ -97,7 +129,10 @@ func (c *CoapDTLSConnection) Connect() error {
 }
 
 func (c *CoapDTLSConnection) Disconnect() error {
-	_cancel()
+	c.ConnectCancel()
+	c.ObserveDone()
+	c.ObserveWaitGroup.Wait()
+
 	if c._status == 2 {
 		c._connection.Close()
 	}
@@ -110,12 +145,8 @@ func (c *CoapDTLSConnection) Disconnect() error {
 
 func (c *CoapDTLSConnection) HandleError(request CoapDTLSRequest) {
 	if c.UseQueue {
-		log.WithFields(log.Fields{
-			"Uri": request.Uri,
-		}).Debug("Adding request to queue")
+		c.AddToQueue(request)
 	}
-
-	c.AddToQueue(request)
 
 	if c._status == 2 {
 		c.Disconnect()
@@ -152,6 +183,19 @@ func (c *CoapDTLSConnection) GET(ctx context.Context, uri string, handler func([
 }
 
 func (c *CoapDTLSConnection) PUT(ctx context.Context, uri string, payload string, handler func([]byte, error)) {
+	log.WithFields(log.Fields{
+		"Uri":     uri,
+		"Payload": payload,
+	}).Debug("CoapDTLSConnection.PUT")
+
+	if c._status != 2 {
+		log.WithFields(log.Fields{
+			"Error": "Not connected",
+		}).Error("COAP - PUT")
+		c.HandleError(CoapDTLSRequest{RequestMethod: "PUT", Uri: uri, Payload: payload, Handler: handler})
+		return
+	}
+
 	if response, err := c._connection.Put(ctx, uri, message.AppJSON, bytes.NewReader([]byte(payload))); err == nil {
 		if m, err := response.ReadBody(); err == nil {
 			handler(m, ProcessMessageCode(response))
@@ -162,10 +206,25 @@ func (c *CoapDTLSConnection) PUT(ctx context.Context, uri string, payload string
 		log.WithFields(log.Fields{
 			"Error": err.Error(),
 		}).Error("Coap - PUT")
+		c.HandleError(CoapDTLSRequest{RequestMethod: "PUT", Uri: uri, Payload: payload, Handler: handler})
+		return
 	}
 }
 
 func (c *CoapDTLSConnection) POST(ctx context.Context, uri string, payload string, handler func([]byte, error)) {
+	log.WithFields(log.Fields{
+		"Uri":     uri,
+		"Payload": payload,
+	}).Debug("CoapDTLSConnection.POST")
+
+	if c._status != 2 {
+		log.WithFields(log.Fields{
+			"Error": "Not connected",
+		}).Error("COAP - GET")
+		c.HandleError(CoapDTLSRequest{RequestMethod: "POST", Uri: uri, Payload: payload, Handler: handler})
+		return
+	}
+
 	if response, err := c._connection.Post(ctx, uri, message.AppJSON, bytes.NewReader([]byte(payload))); err == nil {
 		if m, err := response.ReadBody(); err == nil {
 			handler(m, ProcessMessageCode(response))
@@ -176,6 +235,7 @@ func (c *CoapDTLSConnection) POST(ctx context.Context, uri string, payload strin
 		log.WithFields(log.Fields{
 			"Error": err.Error(),
 		}).Error("Coap - POST")
+		c.HandleError(CoapDTLSRequest{RequestMethod: "POST", Uri: uri, Payload: payload, Handler: handler})
 	}
 }
 
@@ -183,6 +243,10 @@ func (c *CoapDTLSConnection) AddToQueue(request CoapDTLSRequest) {
 	c.mu.Lock()
 	c.queue = append(c.queue, request)
 	c.mu.Unlock()
+	log.WithFields(log.Fields{
+		"Uri":          request.Uri,
+		"Queue length": c.QueueLenght(),
+	}).Debug("Added request to queue")
 }
 
 func (c *CoapDTLSConnection) QueueLenght() int {
@@ -206,25 +270,26 @@ func (c *CoapDTLSConnection) HandleQueue() {
 		switch item.RequestMethod {
 		case "GET":
 			ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
-			c.GET(ctx, item.Uri, item.Handler)
+			go c.GET(ctx, item.Uri, item.Handler)
 		case "PUT":
 			ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
-			c.PUT(ctx, item.Uri, item.Payload, item.Handler)
+			go c.PUT(ctx, item.Uri, item.Payload, item.Handler)
 		case "POST":
 			ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
-			c.POST(ctx, item.Uri, item.Payload, item.Handler)
+			go c.POST(ctx, item.Uri, item.Payload, item.Handler)
 		case "OBSERVE":
-			c.Observe(item.Context, item.WaitGroup, item.Uri, item.Handler, item.KeepAlive)
+			// go c.Observe(item.Context, item.WaitGroup, item.Uri, item.Handler, item.KeepAlive)
+			go c.Observe(item.Uri, item.Handler)
 		}
 	}
 }
 
-func (c *CoapDTLSConnection) Observe(ctx context.Context, wg *sync.WaitGroup, uri string, handler func([]byte, error), keepAlive int) {
-	var ticker *time.Ticker
-	wg.Add(1)
-	defer wg.Done()
+// func (c *CoapDTLSConnection) Observe(ctx context.Context, wg *sync.WaitGroup, uri string, handler func([]byte, error), keepAlive int) {
+func (c *CoapDTLSConnection) Observe(uri string, handler func([]byte, error)) {
+	c.ObserveWaitGroup.Add(1)
+	defer c.ObserveWaitGroup.Done()
 
-	if e := ctx.Err(); e == context.Canceled {
+	if e := c.ObserveContext.Err(); e == context.Canceled {
 		log.WithFields(log.Fields{
 			"uri":   uri,
 			"error": e.Error(),
@@ -237,59 +302,39 @@ func (c *CoapDTLSConnection) Observe(ctx context.Context, wg *sync.WaitGroup, ur
 			"uri":   uri,
 			"error": "Not connected to gateway, adding to queue",
 		}).Debug("CoapDTLSConnection - Observe")
-		c.HandleError(CoapDTLSRequest{Uri: uri, RequestMethod: "OBSERVE", Handler: handler, Context: ctx, WaitGroup: wg, KeepAlive: keepAlive})
+		c.HandleError(CoapDTLSRequest{Uri: uri, RequestMethod: "OBSERVE", Handler: handler})
 		return
 	}
 
-	if keepAlive == 0 {
-		ticker = time.NewTicker(1 * time.Second)
-		ticker.Stop()
-	} else {
-		ticker = time.NewTicker(time.Duration(keepAlive) * time.Second)
-		defer ticker.Stop()
-	}
+	_ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-	for {
-		_ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
+	obs, err := c._connection.Observe(_ctx, uri, func(req *pool.Message) {
+		if m, err := req.ReadBody(); err == nil {
+			handler(m, ProcessMessageCode(req))
+		}
+	})
 
-		obs, err := c._connection.Observe(_ctx, uri, func(req *pool.Message) {
-			if m, err := req.ReadBody(); err == nil {
-				handler(m, ProcessMessageCode(req))
-			}
-		})
-		if err != nil {
+	if err != nil {
 
-			description := err.Error()
+		description := err.Error()
 
-			if strings.Contains(description, "cannot write to connection") {
-				c.HandleError(CoapDTLSRequest{Uri: uri, RequestMethod: "OBSERVE", Handler: handler, Context: ctx, WaitGroup: wg, KeepAlive: keepAlive})
-			}
-
-			log.WithFields(log.Fields{
-				"uri":   uri,
-				"Error": err.Error(),
-			}).Error("CoapDTLSConnection - Observe - Init")
-			return
+		if strings.Contains(description, "cannot write to connection") {
+			c.HandleError(CoapDTLSRequest{Uri: uri, RequestMethod: "OBSERVE", Handler: handler})
 		}
 
-		select {
-		case <-ticker.C:
-			log.WithFields(log.Fields{
-				"uri": uri,
-			}).Debug("Observe keepalive")
-			_ctx2, done2 := context.WithTimeout(context.Background(), 2*time.Second)
-			defer done2()
-			obs.Cancel(_ctx2)
-			break
-		case <-ctx.Done():
-			log.WithFields(log.Fields{
-				"uri": uri,
-			}).Debug("Canceling observe")
-			_ctx3, done3 := context.WithTimeout(context.Background(), 2*time.Second)
-			defer done3()
-			obs.Cancel(_ctx3)
-			return
-		}
+		log.WithFields(log.Fields{
+			"uri":   uri,
+			"Error": err.Error(),
+		}).Error("CoapDTLSConnection - Observe - Init")
+		return
 	}
+
+	<-c.ObserveContext.Done()
+	log.WithFields(log.Fields{
+		"uri": uri,
+	}).Debug("Canceling observe")
+	_ctx3, done3 := context.WithTimeout(context.Background(), 2*time.Second)
+	defer done3()
+	obs.Cancel(_ctx3)
 }
