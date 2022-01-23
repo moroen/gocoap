@@ -29,7 +29,6 @@ type CoapDTLSConnection struct {
 	Ident              string
 	Key                string
 	UseQueue           bool
-	OnFirstConnect     func()
 	OnConnect          func()
 	OnDisconnect       func()
 	OnCanceled         func()
@@ -43,6 +42,7 @@ type CoapDTLSConnection struct {
 	ObserveWaitGroup   sync.WaitGroup
 	ObserveDone        func()
 	KeepAlive          int
+	DisconnectTimer    int
 }
 
 type CoapDTLSRequest struct {
@@ -90,12 +90,6 @@ func (c *CoapDTLSConnection) Connect() error {
 			c._connection = conn
 			c.ObserveContext, c.ObserveDone = context.WithCancel(context.Background())
 
-			if c.OnFirstConnect != nil {
-				c._status = 2
-				c.OnFirstConnect()
-				c.OnFirstConnect = nil
-			}
-
 			if c.OnConnect != nil {
 				c._status = 2
 				c.OnConnect()
@@ -107,6 +101,10 @@ func (c *CoapDTLSConnection) Connect() error {
 
 			if c.KeepAlive > 0 {
 				c._keepAlive()
+			}
+
+			if c.DisconnectTimer > 0 {
+				c.TimedDisconnect()
 			}
 
 			return nil
@@ -128,9 +126,19 @@ func (c *CoapDTLSConnection) Connect() error {
 	}
 }
 
+func (c *CoapDTLSConnection) TimedDisconnect() error {
+	t := time.NewTimer(time.Second * time.Duration(c.DisconnectTimer))
+	<-t.C
+	c.Disconnect()
+	return nil
+}
+
 func (c *CoapDTLSConnection) Disconnect() error {
+	log.Debug("Disconnecting")
 	c.ConnectCancel()
-	c.ObserveDone()
+	if c.ObserveDone != nil {
+		c.ObserveDone()
+	}
 	c.ObserveWaitGroup.Wait()
 
 	if c._status == 2 {
@@ -205,7 +213,7 @@ func (c *CoapDTLSConnection) PUT(ctx context.Context, uri string, payload string
 	} else {
 		log.WithFields(log.Fields{
 			"Error": err.Error(),
-		}).Error("Coap - PUT")
+		}).Error("Coap - PUT - error")
 		c.HandleError(CoapDTLSRequest{RequestMethod: "PUT", Uri: uri, Payload: payload, Handler: handler})
 		return
 	}
@@ -213,14 +221,15 @@ func (c *CoapDTLSConnection) PUT(ctx context.Context, uri string, payload string
 
 func (c *CoapDTLSConnection) POST(ctx context.Context, uri string, payload string, handler func([]byte, error)) {
 	log.WithFields(log.Fields{
-		"Uri":     uri,
-		"Payload": payload,
+		"Uri":              uri,
+		"Payload":          payload,
+		"ConnectionStatus": c._status,
 	}).Debug("CoapDTLSConnection.POST")
 
 	if c._status != 2 {
 		log.WithFields(log.Fields{
 			"Error": "Not connected",
-		}).Error("COAP - GET")
+		}).Error("COAP - POST")
 		c.HandleError(CoapDTLSRequest{RequestMethod: "POST", Uri: uri, Payload: payload, Handler: handler})
 		return
 	}
