@@ -3,6 +3,7 @@ package gocoap
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -29,6 +30,7 @@ type CoapDTLSConnection struct {
 	Ident              string
 	Key                string
 	UseQueue           bool
+	RetryConnect       bool
 	OnConnect          func()
 	OnDisconnect       func()
 	OnCanceled         func()
@@ -113,6 +115,10 @@ func (c *CoapDTLSConnection) Connect() error {
 				c._status = 1
 				c.OnConnectionFailed()
 			}
+
+			if !c.RetryConnect {
+				return errors.New("unable to connect")
+			}
 		}
 		select {
 		case <-ticker.C:
@@ -135,7 +141,11 @@ func (c *CoapDTLSConnection) TimedDisconnect() error {
 
 func (c *CoapDTLSConnection) Disconnect() error {
 	log.Debug("Disconnecting")
-	c.ConnectCancel()
+
+	if c.ConnectCancel != nil {
+		c.ConnectCancel()
+	}
+
 	if c.ObserveDone != nil {
 		c.ObserveDone()
 	}
