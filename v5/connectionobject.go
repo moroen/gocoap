@@ -165,11 +165,10 @@ func (c *CoapDTLSConnection) HandleError(request CoapDTLSRequest) {
 	if c.UseQueue {
 		c.AddToQueue(request)
 	}
-
 	if c._status == 2 {
 		c.Disconnect()
 	}
-	c.Connect()
+	go c.Connect()
 }
 
 func (c *CoapDTLSConnection) GET(ctx context.Context, uri string, handler func([]byte, error)) {
@@ -210,7 +209,9 @@ func (c *CoapDTLSConnection) PUT(ctx context.Context, uri string, payload string
 		log.WithFields(log.Fields{
 			"Error": "Not connected",
 		}).Error("COAP - PUT")
+
 		c.HandleError(CoapDTLSRequest{RequestMethod: "PUT", Uri: uri, Payload: payload, Handler: handler})
+
 		return
 	}
 
@@ -262,6 +263,7 @@ func (c *CoapDTLSConnection) AddToQueue(request CoapDTLSRequest) {
 	c.mu.Lock()
 	c.queue = append(c.queue, request)
 	c.mu.Unlock()
+
 	log.WithFields(log.Fields{
 		"Uri":          request.Uri,
 		"Queue length": c.QueueLenght(),
