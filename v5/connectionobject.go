@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -300,7 +299,7 @@ func (c *CoapDTLSConnection) HandleQueue() {
 			go c.POST(ctx, item.Uri, item.Payload, item.Handler)
 		case "OBSERVE":
 			// go c.Observe(item.Context, item.WaitGroup, item.Uri, item.Handler, item.KeepAlive)
-			go c.Observe(item.Uri, item.Handler)
+			// go c.Observe(item.Uri, item.Handler)
 		}
 	}
 }
@@ -338,11 +337,7 @@ func (c *CoapDTLSConnection) Observe(uri string, handler func([]byte, error)) {
 
 	if err != nil {
 
-		description := err.Error()
-
-		if strings.Contains(description, "cannot write to connection") {
-			c.HandleError(CoapDTLSRequest{Uri: uri, RequestMethod: "OBSERVE", Handler: handler})
-		}
+		c.HandleError(CoapDTLSRequest{Uri: uri, RequestMethod: "OBSERVE", Handler: handler})
 
 		log.WithFields(log.Fields{
 			"uri":   uri,
