@@ -10,5 +10,5 @@ require (
 	github.com/sirupsen/logrus v1.4.2
 	go.uber.org/atomic v1.7.0 // indirect
 	golang.org/x/net v0.0.0-20210405180319-a5a99cb37ef4 // indirect
-	golang.org/x/sys v0.0.0-20210403161142-5e06dd20ab57 // indirect
+	golang.org/x/sys v0.1.0 // indirect
 )
